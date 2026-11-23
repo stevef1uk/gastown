@@ -534,14 +534,17 @@ func rewriteUnittestToWorkdirAtTownRoot(cmd, rig, townRoot string, v orchestrato
 		changed = true
 	} else if orchestrator.WorkflowUsesGo(v) && layout != "" && layout != "." &&
 		commandHasMayorRigCD(cmd, rig) && commandHasLayoutCD(cmd, layout) {
-		// Go: command has both "cd mayor/rig && cd layout" — strip both and
-		// replace with single cd to the module root to avoid broken relative paths.
-		rest := stripCDLayoutPrefix(stripFirstCDPrefix(cmd), layout)
-		rest = stripMayorRigCDCmd(rest, rig)
-		cmd = "cd " + workPath + " && " + strings.TrimSpace(rest)
-		changed = true
+		firstRest := stripFirstCDPrefix(cmd)
+		// Only collapse when "cd <layout>" immediately follows "cd <mayor/rig>".
+		// If there are intermediate commands before "cd <layout>", the command already manages its own directory transitions.
+		if startsWithCDLayout(firstRest, layout) {
+			rest := stripCDLayoutPrefix(firstRest, layout)
+			rest = stripMayorRigCDCmd(rest, rig)
+			cmd = "cd " + workPath + " && " + strings.TrimSpace(rest)
+			changed = true
+		}
 	}
-	if orchestrator.WorkflowUsesGo(v) {
+	if orchestrator.WorkflowUsesGo(v) && isCommandCWDInLayout(cmd, workPath, layout) {
 		normalized := orchestrator.NormalizeGoLayoutPackagePaths(cmd, workPath, layout)
 		if normalized != cmd {
 			cmd = normalized
@@ -550,8 +553,8 @@ func rewriteUnittestToWorkdirAtTownRoot(cmd, rig, townRoot string, v orchestrato
 	}
 	if layout != "" && layout != "." {
 		cmd = normalizeRigPrefixShellPaths(cmd, rig, layout)
-		// Only strip layout/ prefix when we're actually in the layout root (Go modules or layoutShell).
-		if strings.HasSuffix(strings.Trim(workPath, "/"), layout) {
+		// Only strip layout/ prefix when the command actually begins execution in the layout root.
+		if isCommandCWDInLayout(cmd, workPath, layout) {
 			normalized := normalizeLayoutShellPaths(cmd, layout)
 			if normalized != cmd {
 				cmd = normalized
@@ -865,6 +868,50 @@ func commandHasLayoutCD(cmd, layout string) bool {
 	}
 	// Also check "/layout &&" patterns (e.g. in complex chains)
 	return strings.Contains(lower, "/"+layoutLower+" &&")
+}
+
+// startsWithCDLayout reports whether cmd begins immediately with a cd into the layout directory.
+func startsWithCDLayout(cmd, layout string) bool {
+	trimmed := strings.TrimSpace(cmd)
+	layout = strings.Trim(strings.TrimSpace(layout), "/")
+	if layout == "" {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	layoutLower := strings.ToLower(layout)
+	prefixes := []string{
+		"cd " + layoutLower + " &&",
+		"cd " + layoutLower + ";",
+		"cd " + layoutLower + " ",
+		"cd ./" + layoutLower + " &&",
+		"cd ./" + layoutLower + ";",
+		"cd ./" + layoutLower + " ",
+		"cd " + layoutLower + "/ &&",
+		"cd " + layoutLower + "/;",
+		"cd " + layoutLower + "/ ",
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// isCommandCWDInLayout reports whether cmd starts with an explicit cd into the layout root workPath.
+func isCommandCWDInLayout(cmd, workPath, layout string) bool {
+	trimmed := strings.TrimSpace(cmd)
+	wp := strings.Trim(filepath.ToSlash(strings.TrimSpace(workPath)), "/")
+	layout = strings.Trim(filepath.ToSlash(strings.TrimSpace(layout)), "/")
+	if layout == "" || wp == "" || !strings.HasSuffix(wp, layout) {
+		return false
+	}
+	if strings.HasPrefix(trimmed, "cd "+wp+" &&") || strings.HasPrefix(trimmed, "cd "+wp+";") ||
+		strings.HasPrefix(trimmed, "cd "+layout+" &&") || strings.HasPrefix(trimmed, "cd "+layout+";") ||
+		strings.HasPrefix(trimmed, "cd ./"+layout+" &&") || strings.HasPrefix(trimmed, "cd ./"+layout+";") {
+		return true
+	}
+	return false
 }
 
 // commandHasMayorRigCD reports whether cmd already cds into the rig mayor/rig worktree.

@@ -919,6 +919,26 @@ func TestRewriteUnittestToWorkdir_stripsLayoutPrefixFromGoTest(t *testing.T) {
 	}
 }
 
+func TestRewriteUnittestToWorkdir_compoundCommandWithIntermediateChecksPreserved(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "pingapp",
+		QAVerifyCommand: "cd pingapp && go build .",
+		DeliveryPhases: []orchestrator.DeliveryPhase{
+			{ID: "core", QAVerifyCommand: "cd pingapp && go build ."},
+		},
+	}
+	cmd := "cd ping_rig/mayor/rig && ls -la pingapp && cat pingapp/main_test.go; echo \"---EXIT:$?---\"; cat SPEC.md; echo \"---ARCH---\"; cat architecture.md; echo \"---BUILD---\"; cd pingapp && go build . ; echo \"BUILD_EXIT:$?\""
+	fixed, changed := rewriteUnittestToWorkdir(cmd, "ping_rig", v)
+	// Must NOT strip SPEC.md/architecture.md from ping_rig/mayor/rig, and must not collapse
+	// cd when intermediate commands run from mayor/rig.
+	if changed {
+		t.Fatalf("compound command with separate cd should not be collapsed: got %q", fixed)
+	}
+	if strings.Contains(fixed, "cat ./main_test.go") {
+		t.Fatalf("must not strip pingapp/ prefix when cwd is mayor/rig: %q", fixed)
+	}
+}
+
 func TestRewriteUnittestToWorkdir_layoutRelativeTestF(t *testing.T) {
 	v := orchestrator.WorkflowValidation{LayoutRoot: "linkshelf"}
 	cmd := "cd linkshelf && test -f web/index.html"
