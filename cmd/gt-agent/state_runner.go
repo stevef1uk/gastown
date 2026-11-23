@@ -1177,6 +1177,10 @@ func (r *stateRunner) backfillCodeCache() {
 		orchestratedPrintf("[gt-agent] cache backfill open error: %v\n", err)
 		return
 	}
+	if cache.WasInvalidated() {
+		orchestratedPrintf("[gt-agent] cache backfill skipped: design changed; stale artifacts must be regenerated\n")
+		return
+	}
 	phaseIdx := r.v.ActivePhaseIndex()
 	scoped := r.v.ForActivePhase()
 	mayorDir := rigMayorRigDir(r.townRoot, r.rig)

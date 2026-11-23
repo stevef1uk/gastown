@@ -62,6 +62,115 @@ func TestEnsurePlaywrightConfigReady_createsConfigAtLayoutRoot(t *testing.T) {
 	}
 }
 
+func TestEnsurePlaywrightConfigReady_topLevelSpecNarrowsDiscovery(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "myrig", "mayor", "rig")
+	writeSpec(t, filepath.Join(rigDir, "app", "tests", "e2e.spec.js"))
+
+	v := WorkflowValidation{
+		LayoutRoot:      "app",
+		RequiredFiles:   []string{"app/tests/e2e.spec.js", "app/cmd/server/main.go"},
+		DevServerPort:   8080,
+		TestRunner:      "go",
+		QAVerifyCommand: "cd app && go test ./...",
+	}
+
+	if _, err := EnsurePlaywrightConfigReady(dir, "myrig", v); err != nil {
+		t.Fatalf("EnsurePlaywrightConfigReady failed: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(rigDir, "app", "playwright.config.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		"testDir: './tests'",
+		"testMatch: 'e2e.spec.js'",
+		"webServer",
+		"go run ./cmd/server",
+		"localhost:8080",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("config missing %q:\n%s", want, content)
+		}
+	}
+}
+
+func TestEnsurePlaywrightConfigReady_ignoresNonPlaywrightSiblingSpec(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "myrig", "mayor", "rig")
+	if err := os.MkdirAll(filepath.Join(rigDir, "app", "tests"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rigDir, "app", "tests", "frontend-ui.spec.js"), []byte("process.exit(0)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{LayoutRoot: "app", RequiredFiles: []string{"app/tests/frontend-ui.spec.js"}, DevServerPort: 8080}
+	msg, err := EnsurePlaywrightConfigReady(dir, "myrig", v)
+	if err != nil {
+		t.Fatalf("EnsurePlaywrightConfigReady failed: %v", err)
+	}
+	if msg != "" {
+		t.Errorf("expected no config for non-Playwright sibling spec, got %q", msg)
+	}
+	if _, err := os.Stat(filepath.Join(rigDir, "app", "playwright.config.ts")); err == nil {
+		t.Error("config should not be created for non-Playwright sibling spec")
+	}
+}
+
+func TestEnsurePlaywrightConfigReady_repairsBroadExistingJSConfig(t *testing.T) {
+	dir := t.TempDir()
+	rigDir := filepath.Join(dir, "myrig", "mayor", "rig")
+	writeSpec(t, filepath.Join(rigDir, "app", "tests", "e2e.spec.js"))
+	configPath := filepath.Join(rigDir, "app", "playwright.config.js")
+	existing := `const { defineConfig, devices } = require('@playwright/test');
+
+module.exports = defineConfig({
+  testDir: './tests',
+  timeout: 10000,
+  use: { baseURL: 'http://localhost:8080' },
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--no-sandbox'] } } }],
+});
+`
+	if err := os.WriteFile(configPath, []byte(existing), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:      "app",
+		RequiredFiles:   []string{"app/tests/e2e.spec.js", "app/cmd/server/main.go"},
+		DevServerPort:   8080,
+		TestRunner:      "go",
+		QAVerifyCommand: "cd app && go test ./...",
+	}
+	if _, err := EnsurePlaywrightConfigReady(dir, "myrig", v); err != nil {
+		t.Fatalf("EnsurePlaywrightConfigReady failed: %v", err)
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		"const { defineConfig, devices } = require('@playwright/test')",
+		"module.exports = defineConfig({",
+		"testDir: './tests'",
+		"testMatch: 'e2e.spec.js'",
+		"webServer: {",
+		"go run ./cmd/server",
+		"--no-sandbox",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("repaired config missing %q:\n%s", want, content)
+		}
+	}
+	if strings.Count(content, "testMatch:") != 1 {
+		t.Errorf("expected exactly one testMatch line:\n%s", content)
+	}
+	if strings.Count(content, "webServer:") != 1 {
+		t.Errorf("expected exactly one webServer block:\n%s", content)
+	}
+}
+
 func TestEnsurePlaywrightConfigReady_usesProfilePort(t *testing.T) {
 	dir := t.TempDir()
 	rigDir := filepath.Join(dir, "myrig", "mayor", "rig")

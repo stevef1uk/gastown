@@ -54,21 +54,54 @@ func TestPlanAcceptanceBullets_storeGoUsesDefaultBullets(t *testing.T) {
 	}
 }
 
-func TestPlanAcceptanceBullets_phase2Behavior(t *testing.T) {
+func TestPlanAcceptanceBullets_webFilesUseGenericBullets(t *testing.T) {
 	t.Parallel()
-	v := WorkflowValidation{LayoutRoot: "taskboard", TestRunner: "pytest"}
-	cases := map[string]string{
-		"taskboard/templates/index.html":     "project creation input/button",
-		"taskboard/static/app.js":            "GET /api/projects",
-		"taskboard/static/style.css":         "narrow-window layout",
-		"taskboard/tests/test_api.py":        `GET /api/health`,
-		"taskboard/tests/test_repository.py": "project deletion cascades",
-		"taskboard/tests/test_ui_content.py": "TaskBoard",
-	}
-	for path, want := range cases {
+	v := WorkflowValidation{LayoutRoot: "frontend", TestRunner: "go", SpecSummary: "Interactive bookmark manager"}
+	for _, path := range []string{
+		"frontend/web/index.html",
+		"frontend/web/app.js",
+		"frontend/web/style.css",
+	} {
 		joined := strings.Join(planAcceptanceBullets(path, v), "\n")
-		if !strings.Contains(joined, want) {
-			t.Errorf("planAcceptanceBullets(%q) missing %q:\n%s", path, want, joined)
+		for _, unwanted := range []string{
+			"Kanban", "TaskBoard", "/api/projects", "project creation input/button",
+			"project selector", "`todo`", "`done`", "frontend/static/",
+		} {
+			if strings.Contains(joined, unwanted) {
+				t.Errorf("planAcceptanceBullets(%q) leaked domain-specific contract %q:\n%s", path, unwanted, joined)
+			}
+		}
+		wants := []string{"File exists at", "Matches layout and naming"}
+		if strings.HasSuffix(path, ".html") || strings.HasSuffix(path, ".js") {
+			wants = append(wants, "real interactive controls")
+		}
+		for _, want := range wants {
+			if !strings.Contains(joined, want) {
+				t.Errorf("planAcceptanceBullets(%q) missing generic bullet %q:\n%s", path, want, joined)
+			}
+		}
+	}
+}
+
+func TestPlanAcceptanceBullets_pythonTestsUseGenericBullets(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{LayoutRoot: "service", TestRunner: "pytest"}
+	for _, path := range []string{
+		"service/tests/test_api.py",
+		"service/tests/test_repository.py",
+		"service/tests/test_ui_content.py",
+	} {
+		joined := strings.Join(planAcceptanceBullets(path, v), "\n")
+		for _, unwanted := range []string{
+			"project create/list/delete", "project deletion cascades", "TaskBoard",
+			"GET /api/projects", "Kanban",
+		} {
+			if strings.Contains(joined, unwanted) {
+				t.Errorf("planAcceptanceBullets(%q) leaked domain-specific contract %q:\n%s", path, unwanted, joined)
+			}
+		}
+		if !strings.Contains(joined, "functional requirements") {
+			t.Errorf("planAcceptanceBullets(%q) missing generic test bullet:\n%s", path, joined)
 		}
 	}
 }

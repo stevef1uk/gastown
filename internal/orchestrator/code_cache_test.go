@@ -1,6 +1,8 @@
 package orchestrator
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -66,6 +68,52 @@ func TestCodeCache_persistence(t *testing.T) {
 	}
 	if got != "package api" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestCodeCache_invalidatesWhenDesignChanges(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "architecture.md"), []byte("version 1"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c1, err := OpenCodeCache(dir, "wf-design")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c1.Put(0, "Dockerfile", "FROM node:20")
+	c1.MarkValidated(0, "Dockerfile")
+
+	if err := os.WriteFile(filepath.Join(dir, "architecture.md"), []byte("version 2"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c2, err := OpenCodeCache(dir, "wf-design")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c2.GetValidated(0, "Dockerfile"); ok {
+		t.Fatal("expected cached entry to be invalidated when architecture changes")
+	}
+}
+
+func TestCodeCache_invalidatesLegacyEntriesForDesignedRigs(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "SPEC.md"), []byte("spec"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cacheDir := filepath.Join(dir, ".gastown", "code-cache")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{"0:stale.go":{"content":"old","md5":"x","validated":true,"created_at":"2026-01-01T00:00:00Z"}}`
+	if err := os.WriteFile(filepath.Join(cacheDir, "wf-legacy.json"), []byte(legacy), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := OpenCodeCache(dir, "wf-legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.GetValidated(0, "stale.go"); ok {
+		t.Fatal("expected legacy cache entry to be invalidated for designed rig")
 	}
 }
 

@@ -13,19 +13,22 @@ import (
 
 // CacheEntry stores a generated file's content and validation state.
 type CacheEntry struct {
-	Content    string `json:"content"`
-	MD5        string `json:"md5"`
-	Validated  bool   `json:"validated"`
-	ValidatedAt string `json:"validated_at,omitempty"`
-	CreatedAt  string `json:"created_at"`
+	Content           string `json:"content"`
+	MD5               string `json:"md5"`
+	Validated         bool   `json:"validated"`
+	ValidatedAt       string `json:"validated_at,omitempty"`
+	CreatedAt         string `json:"created_at"`
+	DesignFingerprint string `json:"design_fingerprint,omitempty"`
 }
 
 // CodeCache is a per-workflow cache of generated file content keyed by phase+path.
 type CodeCache struct {
-	mu      sync.RWMutex
-	dir     string
-	wfID    string
-	entries map[string]*CacheEntry
+	mu                sync.RWMutex
+	dir               string
+	wfID              string
+	entries           map[string]*CacheEntry
+	designFingerprint string
+	invalidated       bool
 }
 
 // cacheKey builds the lookup key from phase index and relative file path.
@@ -40,9 +43,10 @@ func OpenCodeCache(rigDir, workflowID string) (*CodeCache, error) {
 		return nil, err
 	}
 	c := &CodeCache{
-		dir:     cacheDir,
-		wfID:    workflowID,
-		entries: map[string]*CacheEntry{},
+		dir:               cacheDir,
+		wfID:              workflowID,
+		entries:           map[string]*CacheEntry{},
+		designFingerprint: designFingerprint(rigDir),
 	}
 	if err := c.load(); err != nil && !os.IsNotExist(err) {
 		return nil, err
@@ -54,12 +58,45 @@ func (c *CodeCache) cachePath() string {
 	return filepath.Join(c.dir, c.wfID+".json")
 }
 
+func designFingerprint(rigDir string) string {
+	h := md5.New()
+	for _, name := range []string{"architecture.md", "SPEC.md"} {
+		data, err := os.ReadFile(filepath.Join(rigDir, name))
+		if err != nil {
+			continue
+		}
+		_, _ = h.Write([]byte(name))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write(data)
+		_, _ = h.Write([]byte{0})
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
 func (c *CodeCache) load() error {
 	data, err := os.ReadFile(c.cachePath())
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, &c.entries)
+	if err := json.Unmarshal(data, &c.entries); err != nil {
+		return err
+	}
+	dropped := false
+	for key, entry := range c.entries {
+		if entry == nil || entry.DesignFingerprint != c.designFingerprint {
+			delete(c.entries, key)
+			dropped = true
+		}
+	}
+	if dropped {
+		c.invalidated = true
+		return c.save()
+	}
+	return nil
+}
+
+func (c *CodeCache) WasInvalidated() bool {
+	return c != nil && c.invalidated
 }
 
 func (c *CodeCache) save() error {
@@ -77,9 +114,10 @@ func (c *CodeCache) Put(phaseIdx int, relPath, content string) {
 	h := md5.Sum([]byte(content))
 	key := cacheKey(phaseIdx, relPath)
 	c.entries[key] = &CacheEntry{
-		Content:   content,
-		MD5:       fmt.Sprintf("%x", h),
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		Content:           content,
+		MD5:               fmt.Sprintf("%x", h),
+		CreatedAt:         time.Now().UTC().Format(time.RFC3339),
+		DesignFingerprint: c.designFingerprint,
 	}
 	_ = c.save()
 }

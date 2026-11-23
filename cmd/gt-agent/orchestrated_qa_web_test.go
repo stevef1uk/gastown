@@ -205,6 +205,39 @@ func TestValidateWebInteractiveUI_rejectsStaticScreen(t *testing.T) {
 	}
 }
 
+func TestValidateWebInteractiveUI_ignoresTestAndConfigArtifacts(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "mockrig"
+	writeLinkshelfWebFixture(t, dir, rig, `<!DOCTYPE html>
+<html><body><h1>Link Shelf</h1><p>Your saved links appear below.</p></body></html>
+`)
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	if err := os.WriteFile(filepath.Join(rigDir, "linkshelf", "web", "app.js"), []byte("// static frontend\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	artifacts := map[string]string{
+		"linkshelf/playwright.config.js":      "const { devices } = require('@playwright/test');\nmodule.exports = {};\n",
+		"linkshelf/tests/e2e.spec.js":         "await page.getByRole('button').click();\nawait fetch('/api/links');\n",
+		"linkshelf/tests/frontend-ui.spec.js": "const button = document.createElement('button');\naddEventListener('click', () => fetch('/api/links'));\nprocess.exit(0);\n",
+	}
+	v := linkshelfWebProfile()
+	for rel, body := range artifacts {
+		path := filepath.Join(rigDir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+		v.RequiredFiles = append(v.RequiredFiles, rel)
+	}
+	err := validateWebStaticReferences(dir, rig, v)
+	if err == nil || !strings.Contains(err.Error(), "look static") {
+		t.Fatalf("expected static UI rejection ignoring test artifacts, got: %v", err)
+	}
+}
+
 func TestValidateWebInteractiveUI_acceptsClientComponent(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

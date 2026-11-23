@@ -27,6 +27,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -505,6 +506,8 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 	// Detect the e2e spec dir relative to the layout root (e.g. "tests" for
 	// "<layout>/tests/e2e/foo.spec.ts", "test" for "<layout>/test/e2e/...").
 	testDirRel := ""
+	e2eRel := ""
+	testMatch := ""
 	for _, f := range v.UnionRequiredFiles() {
 		lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f)))
 		if !isPlaywrightSpecPath(lower) {
@@ -514,12 +517,23 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 		if strings.HasPrefix(lower, layout+"/") {
 			rel = strings.TrimPrefix(lower, layout+"/")
 		}
-		if strings.HasPrefix(rel, "e2e/") {
+		if isTopLevelE2ESpecPath(rel) {
+			testDirRel = path.Dir(rel)
+			if testDirRel == "." {
+				e2eRel = "."
+			} else {
+				e2eRel = testDirRel
+			}
+			testMatch = path.Base(rel)
+		} else if strings.HasPrefix(rel, "e2e/") {
 			testDirRel = "."
+			e2eRel = "e2e"
 		} else if idx := strings.Index(rel, "/e2e/"); idx >= 0 {
 			testDirRel = rel[:idx]
+			e2eRel = testDirRel + "/e2e"
 		} else {
 			testDirRel = "test"
+			e2eRel = "test/e2e"
 		}
 		break
 	}
@@ -562,33 +576,17 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 		}
 	}
 
-	e2eRel := testDirRel + "/e2e"
-	if testDirRel == "." {
-		e2eRel = "e2e"
+	if e2eRel == "" {
+		e2eRel = testDirRel + "/e2e"
+		if testDirRel == "." {
+			e2eRel = "e2e"
+		}
 	}
 
 	packageJSONPath := filepath.Join(testDir, "package.json")
 	ensurePlaywrightPackageJSON(packageJSONPath)
 	if hasDockerPlaywright {
 		ensurePlaywrightComposeFastCopy(layoutDir)
-	}
-
-	if existingContent != "" {
-		needsDockerRepair := hasDockerPlaywright && (strings.Contains(existingContent, "webServer") ||
-			(e2eRel == "e2e" && strings.Contains(existingContent, "testDir: './test/e2e'")) ||
-			(strings.Contains(existingContent, "baseURL: 'http://localhost:") && !strings.Contains(existingContent, "BASE_URL") && !strings.Contains(existingContent, "host.docker.internal")) ||
-			strings.Contains(existingContent, "reporter: 'html'") ||
-			strings.Contains(existingContent, "retries: process.env.CI ? 2 : 0"))
-		if needsDockerRepair {
-			log.Printf("[playwright-config] repairing %s for Docker Playwright harness (testDir=./%s, non-blocking reporter, BASE_URL)", existingPath, e2eRel)
-			// Overwrite the offending config in place (it may live in the
-			// test dir rather than the layout root).
-			pwConfigPath = existingPath
-		} else if !hasDockerPlaywright && strings.Contains(existingContent, "host.docker.internal") {
-			return "", nil // reverse drift after a stack change; leave as-is
-		} else {
-			return "", nil // healthy existing config
-		}
 	}
 
 	// Determine baseURL from workflow profile or default to 8000
@@ -599,6 +597,38 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 
 	// Choose the dev-server command generically for Go, Python, and Node rigs.
 	serverCmd := DevServerCommand(layoutDir, v)
+
+	if existingContent != "" {
+		_, hasTestMatch := playwrightConfigTestMatchLine(existingContent, testMatch)
+		hasWebServer := strings.Contains(existingContent, "webServer")
+		needsTopLevelRepair := testMatch != "" && (!hasTestMatch ||
+			(!hasDockerPlaywright && serverCmd != "" && !hasWebServer))
+		needsDockerRepair := hasDockerPlaywright && (strings.Contains(existingContent, "webServer") ||
+			(e2eRel == "e2e" && strings.Contains(existingContent, "testDir: './test/e2e'")) ||
+			(strings.Contains(existingContent, "baseURL: 'http://localhost:") && !strings.Contains(existingContent, "BASE_URL") && !strings.Contains(existingContent, "host.docker.internal")) ||
+			strings.Contains(existingContent, "reporter: 'html'") ||
+			strings.Contains(existingContent, "retries: process.env.CI ? 2 : 0") || needsTopLevelRepair)
+		if needsDockerRepair {
+			log.Printf("[playwright-config] repairing %s for Docker Playwright harness (testDir=./%s, non-blocking reporter, BASE_URL)", existingPath, e2eRel)
+			// Overwrite the offending config in place (it may live in the
+			// test dir rather than the layout root).
+			pwConfigPath = existingPath
+		} else if needsTopLevelRepair {
+			repaired := repairPlaywrightConfigForTopLevelSpec(existingContent, testMatch, serverCmd, port)
+			if repaired != existingContent {
+				if err := os.WriteFile(existingPath, []byte(repaired), 0644); err != nil {
+					return "", err
+				}
+				log.Printf("[playwright-config] repaired %s: scoped discovery to %s", existingPath, testMatch)
+			}
+			return "", nil
+		} else if !hasDockerPlaywright && strings.Contains(existingContent, "host.docker.internal") {
+			return "", nil // reverse drift after a stack change; leave as-is
+		} else {
+			return "", nil // healthy existing config
+		}
+	}
+
 	// Resolve '@playwright/test' from wherever it is installed: prefer the layout
 	// root (matches "run from layout root" QA), else the test dir, so the config
 	// loads even when node_modules lives in a subdir (e.g. finally's test/).
@@ -609,11 +639,16 @@ func EnsurePlaywrightConfigReady(townRoot, rig string, v WorkflowValidation) (st
 		baseURLExpr = fmt.Sprintf("process.env.BASE_URL || 'http://host.docker.internal:%d'", port)
 	}
 
+	testMatchLine := ""
+	if testMatch != "" {
+		testMatchLine = fmt.Sprintf("  testMatch: '%s',\n", testMatch)
+	}
+
 	pwConfig := fmt.Sprintf(`import { defineConfig, devices } from %s;
 
 export default defineConfig({
   testDir: './%s',
-  timeout: 10000,
+%s  timeout: 10000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,
@@ -630,7 +665,7 @@ export default defineConfig({
     },
   ],
 %s});
-`, pwImport, e2eRel, baseURLExpr, func() string {
+`, pwImport, e2eRel, testMatchLine, baseURLExpr, func() string {
 		if hasDockerPlaywright {
 			return ""
 		}
@@ -792,14 +827,106 @@ func webServerBlock(serverCmd string, port int) string {
 }
 
 // isPlaywrightSpecPath reports whether a layout-relative path is a Playwright
-// e2e spec file (foo.spec.ts/js/tsx under a test/e2e, tests/e2e, or e2e dir).
+// e2e spec file: either under a conventional e2e/ dir or a top-level
+// e2e.spec.ts/js/tsx beside non-Playwright sibling scripts.
 func isPlaywrightSpecPath(path string) bool {
 	if !(strings.HasSuffix(path, ".spec.ts") || strings.HasSuffix(path, ".spec.js") ||
 		strings.HasSuffix(path, ".spec.tsx")) {
 		return false
 	}
-	return strings.HasPrefix(path, "test/e2e/") || strings.HasPrefix(path, "tests/e2e/") ||
-		strings.HasPrefix(path, "e2e/") || strings.Contains(path, "/e2e/")
+	return isTopLevelE2ESpecPath(path) || strings.HasPrefix(path, "test/e2e/") ||
+		strings.HasPrefix(path, "tests/e2e/") || strings.HasPrefix(path, "e2e/") ||
+		strings.Contains(path, "/e2e/")
+}
+
+// isTopLevelE2ESpecPath reports whether path is e2e.spec.ts/js/tsx in any
+// directory. These files need an explicit testMatch so Playwright does not
+// collect unrelated *.spec.js siblings.
+func isTopLevelE2ESpecPath(path string) bool {
+	switch strings.ToLower(filepath.Base(strings.ToLower(path))) {
+	case "e2e.spec.ts", "e2e.spec.js", "e2e.spec.tsx":
+		return true
+	default:
+		return false
+	}
+}
+
+// playwrightConfigTestMatchLine finds an explicit Playwright testMatch line and
+// reports whether it covers specName. An empty specName means "any testMatch".
+func playwrightConfigTestMatchLine(content, specName string) (int, bool) {
+	for i, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "testMatch:") {
+			continue
+		}
+		if specName == "" || strings.Contains(trimmed, specName) {
+			return i, true
+		}
+		return i, false
+	}
+	return -1, false
+}
+
+// repairPlaywrightConfigForTopLevelSpec narrows an existing model-authored
+// config in place so sibling *.spec.js scripts are not collected. It preserves
+// CommonJS/ESM syntax and all custom browser launch options.
+func repairPlaywrightConfigForTopLevelSpec(content, specName, serverCmd string, port int) string {
+	lines := strings.Split(content, "\n")
+	matchIdx, hasMatch := playwrightConfigTestMatchLine(content, specName)
+	indent := "  "
+	if idx := findPlaywrightTestDirLine(lines); idx >= 0 {
+		line := lines[idx]
+		indent = line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+	}
+
+	insertAt := -1
+	if idx := findPlaywrightTestDirLine(lines); idx >= 0 {
+		insertAt = idx + 1
+	} else if matchIdx >= 0 {
+		insertAt = matchIdx + 1
+	} else {
+		for i, line := range lines {
+			if strings.Contains(line, "defineConfig({") {
+				insertAt = i + 1
+				break
+			}
+		}
+	}
+	if insertAt < 0 {
+		insertAt = len(lines)
+	}
+
+	insert := make([]string, 0, 8)
+	if matchIdx >= 0 {
+		if !hasMatch {
+			lines[matchIdx] = indent + "testMatch: '" + specName + "',"
+		}
+	} else {
+		insert = append(insert, indent+"testMatch: '"+specName+"',")
+	}
+	if serverCmd != "" && !strings.Contains(content, "webServer") {
+		block := strings.TrimSuffix(webServerBlock(serverCmd, port), "\n")
+		for _, line := range strings.Split(block, "\n") {
+			insert = append(insert, indent+strings.TrimLeft(line, " \t"))
+		}
+	}
+	if len(insert) == 0 {
+		return strings.Join(lines, "\n")
+	}
+	next := make([]string, 0, len(lines)+len(insert))
+	next = append(next, lines[:insertAt]...)
+	next = append(next, insert...)
+	next = append(next, lines[insertAt:]...)
+	return strings.Join(next, "\n")
+}
+
+func findPlaywrightTestDirLine(lines []string) int {
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "testDir:") {
+			return i
+		}
+	}
+	return -1
 }
 
 // FormatTestPlanReworkBlock injects rework guidance when the tester re-enters test_plan

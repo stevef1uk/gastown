@@ -80,9 +80,32 @@ func qaScenarioFileBody(rel string) string {
 	}
 }
 
+func TestScopeReworkFeedback_dropsOutOfScopeInstructions(t *testing.T) {
+	got := scopeReworkFeedback("Fix architecture routes.\nRun git reset --hard HEAD.\nDelete node_modules and code-cache/wf-3.json.\nAlign with SPEC.md.")
+	for _, want := range []string{"architecture", "Align with SPEC.md", "Only findings actionable for the current step"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("want %q in %q", want, got)
+		}
+	}
+	for _, unwanted := range []string{"git reset", "node_modules", "code-cache"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("unwanted %q in %q", unwanted, got)
+		}
+	}
+}
+
 func TestWorkflowReworkHints_qaArchitectureFailure(t *testing.T) {
 	got := workflowReworkHints("qa_review", "design", "testrig", "POST /api/items 405", webServerQAValidation())
 	if !strings.Contains(got, "architecture rework") {
 		t.Fatalf("want architect hints: %q", got)
+	}
+}
+
+func TestWorkflowReworkHints_designReworkStaysInDesignScope(t *testing.T) {
+	got := workflowReworkHints("design_review", "design", "testrig", "weak architecture", webServerQAValidation())
+	for _, want := range []string{"preserve what QA approved", "do not rewrite from scratch", "out of scope for this step"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("want %q in %q", want, got)
+		}
 	}
 }

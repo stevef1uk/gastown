@@ -103,6 +103,8 @@ cache when the later phase starts. The prompt hint tells the LLM to reuse it.
 - MD5 is computed for integrity — not used for dedup (LLM generates semantically
   equivalent but byte-different code even for the same intent).
 - No TTL. Entries are cleared by phase via `ClearPhase()` when a phase is replayed.
+- Each entry stores a fingerprint of `architecture.md` and `SPEC.md`; changing either
+  file invalidates the cache so stale generated artifacts cannot be reused.
 
 ## Future Work
 
@@ -112,5 +114,3 @@ cache when the later phase starts. The prompt hint tells the LLM to reuse it.
   interface (the user offered to run Redis in Docker).
 - **Cross-workflow reuse**: key by architecture hash so identical specs reuse cached
   content across workflow runs.
-- **Cache invalidation**: when architecture.md or SPEC.md changes, invalidate
-  cache entries for affected files.
