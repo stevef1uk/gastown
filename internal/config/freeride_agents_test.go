@@ -161,3 +161,48 @@ func TestEnsureTownSettingsFile_Path(t *testing.T) {
 		t.Fatalf("expected %s: %v", want, err)
 	}
 }
+
+func TestSyncRoleAgentsFromFreerideModels_SyncsAgentsAndRoles(t *testing.T) {
+	t.Setenv("FREERIDE_MODELS_CONFIG", "/nonexistent")
+	t.Setenv("LLM_ENDPOINT", "")
+	tmpDir := t.TempDir()
+	path := TownSettingsPath(tmpDir)
+
+	// Create settings with an outdated agent and role
+	initial := &TownSettings{
+		Type:         "town-settings",
+		Version:      1,
+		DefaultAgent: "gt-agent-local",
+		Agents: map[string]*RuntimeConfig{
+			"gt-agent-local": {Command: "gt-agent", Env: map[string]string{"LLM_MODEL": "openrouter/free"}},
+		},
+		RoleAgents: map[string]string{
+			"architect": "gt-agent-local",
+		},
+	}
+	if err := SaveTownSettings(path, initial); err != nil {
+		t.Fatalf("SaveTownSettings: %v", err)
+	}
+
+	synced, err := SyncRoleAgentsFromFreerideModels(tmpDir)
+	if err != nil {
+		t.Fatalf("SyncRoleAgentsFromFreerideModels: %v", err)
+	}
+	if !synced {
+		t.Fatal("expected synced=true")
+	}
+
+	updated, err := LoadOrCreateTownSettings(path)
+	if err != nil {
+		t.Fatalf("LoadOrCreateTownSettings: %v", err)
+	}
+	if updated.RoleAgents["architect"] != "gt-agent-architect" {
+		t.Errorf("role_agents[architect] = %q, want gt-agent-architect", updated.RoleAgents["architect"])
+	}
+	if updated.Agents["gt-agent-architect"] == nil {
+		t.Fatal("missing gt-agent-architect in updated.Agents")
+	}
+	if updated.Agents["gt-agent-architect"].Env["LLM_MODEL"] != "google/gemini-3.6-flash" {
+		t.Errorf("gt-agent-architect model = %q, want google/gemini-3.6-flash", updated.Agents["gt-agent-architect"].Env["LLM_MODEL"])
+	}
+}

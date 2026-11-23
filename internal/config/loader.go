@@ -1164,18 +1164,29 @@ func SyncRoleAgentsFromFreerideModels(townRoot string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("loading town settings: %w", err)
 	}
-	freerideDefaults := DefaultFreerideRoleAgents()
-	if freerideDefaults == nil {
-		return false, nil
-	}
 	changed := false
-	for role, agentName := range freerideDefaults {
-		if ts.RoleAgents == nil {
-			ts.RoleAgents = make(map[string]string)
+	freerideDefaults := DefaultFreerideRoleAgents()
+	if freerideDefaults != nil {
+		for role, agentName := range freerideDefaults {
+			if ts.RoleAgents == nil {
+				ts.RoleAgents = make(map[string]string)
+			}
+			if current, ok := ts.RoleAgents[role]; !ok || current != agentName {
+				ts.RoleAgents[role] = agentName
+				changed = true
+			}
 		}
-		if current, ok := ts.RoleAgents[role]; !ok || current != agentName {
-			ts.RoleAgents[role] = agentName
-			changed = true
+	}
+	freerideAgents := DefaultFreerideAgents(ts.LLMEndpoint)
+	if freerideAgents != nil {
+		for agentName, agentConfig := range freerideAgents {
+			if ts.Agents == nil {
+				ts.Agents = make(map[string]*RuntimeConfig)
+			}
+			if current, ok := ts.Agents[agentName]; !ok || current.Env["LLM_MODEL"] != agentConfig.Env["LLM_MODEL"] {
+				ts.Agents[agentName] = agentConfig
+				changed = true
+			}
 		}
 	}
 	if changed {

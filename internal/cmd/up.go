@@ -475,6 +475,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		// Propagate session transport to subsequently spawned agents.
 		// Without this, agents use the default (tmux) even when town is
 		// configured for NATS.
+		_, _ = config.SyncRoleAgentsFromFreerideModels(townRoot)
 		if settings, err := config.LoadOrCreateTownSettings(config.TownSettingsPath(townRoot)); err == nil && settings != nil {
 			if settings.SessionTransport != "" {
 				os.Setenv("GT_SESSION_TRANSPORT", settings.SessionTransport)
