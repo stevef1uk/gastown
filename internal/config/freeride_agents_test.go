@@ -9,6 +9,7 @@ import (
 
 func TestDefaultInstalledTownSettings_FreerideDefaults(t *testing.T) {
 	t.Setenv("FREERIDE_MODELS_CONFIG", "/nonexistent")
+	t.Setenv("LLM_ENDPOINT", "")
 	ts := DefaultInstalledTownSettings()
 
 	if ts.DefaultAgent != "gt-agent-local" {
@@ -58,8 +59,8 @@ func TestDefaultFreerideRoleAgents_PolecatUsesDeepSeek(t *testing.T) {
 	if roles["polecat"] != "gt-agent-deepseek" {
 		t.Fatalf("polecat role agent = %q, want gt-agent-deepseek", roles["polecat"])
 	}
-	if roles["architect"] != "gt-agent-deepseek" {
-		t.Fatalf("architect role agent = %q, want gt-agent-deepseek", roles["architect"])
+	if roles["architect"] != "gt-agent-architect" {
+		t.Fatalf("architect role agent = %q, want gt-agent-architect", roles["architect"])
 	}
 	if roles["qa"] != "gt-agent-qa" {
 		t.Fatalf("qa role agent = %q, want gt-agent-qa", roles["qa"])
