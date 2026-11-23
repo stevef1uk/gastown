@@ -1133,20 +1133,18 @@ func FreerideModelsPath(townRoot string) string {
 }
 
 // EnsureFreerideModelsFile writes the default freeride_models.json to the town's gastown directory
-// if it does not already exist.
+// ensuring it is always synchronized with compiled-in defaults.
 func EnsureFreerideModelsFile(townRoot string) error {
 	path := FreerideModelsPath(townRoot)
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
-		return err
-	}
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("creating directory: %w", err)
 	}
 	data, err := json.MarshalIndent(DefaultFreerideModelsConfig(), "", "  ")
 	if err != nil {
 		return fmt.Errorf("encoding freeride models: %w", err)
+	}
+	if existing, err := os.ReadFile(path); err == nil && string(existing) == string(data) {
+		return nil
 	}
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("writing freeride models: %w", err)

@@ -47,6 +47,7 @@ func loadFreerideModelsConfig() *FreerideModelsConfig {
 		return loadSingleFreerideConfig(p)
 	}
 	for _, p := range []string{
+		"freeride_models.json",
 		"gastown/freeride_models.json",
 	} {
 		if cfg := loadSingleFreerideConfig(p); cfg != nil {
@@ -113,24 +114,28 @@ func DefaultFreerideModelsConfig() *FreerideModelsConfig {
 }
 
 // DefaultFreerideAgents returns named gt-agent profiles routed through Freeride.
-// Loads model configuration from gastown/freeride_models.json (or FREERIDE_MODELS_CONFIG env var),
+// Loads model configuration from freeride_models.json (or FREERIDE_MODELS_CONFIG env var),
 // falling back to compiled-in defaults if the file is not available.
 // Uses the provided endpoint (e.g., from TownSettings.LLMEndpoint) or falls back to default.
 func DefaultFreerideAgents(endpoint string) map[string]*RuntimeConfig {
+	defaultCfg := DefaultFreerideModelsConfig()
 	if cfg := loadFreerideModelsConfig(); cfg != nil && len(cfg.Agents) > 0 {
-		return buildAgentsFromConfig(cfg, endpoint)
+		for k, v := range cfg.Agents {
+			defaultCfg.Agents[k] = v
+		}
 	}
-
-	return buildAgentsFromConfig(DefaultFreerideModelsConfig(), endpoint)
+	return buildAgentsFromConfig(defaultCfg, endpoint)
 }
 
 // DefaultFreerideRoleAgents maps Gas Town roles to Freeride-backed gt-agent profiles.
-// Loads role mappings from gastown/freeride_models.json (or FREERIDE_MODELS_CONFIG env var),
+// Loads role mappings from freeride_models.json (or FREERIDE_MODELS_CONFIG env var),
 // falling back to compiled-in defaults if the file is not available.
 func DefaultFreerideRoleAgents() map[string]string {
+	defaults := DefaultFreerideModelsConfig().RoleAgents
 	if cfg := loadFreerideModelsConfig(); cfg != nil && cfg.RoleAgents != nil {
-		return cfg.RoleAgents
+		for role, agent := range cfg.RoleAgents {
+			defaults[role] = agent
+		}
 	}
-
-	return DefaultFreerideModelsConfig().RoleAgents
+	return defaults
 }
