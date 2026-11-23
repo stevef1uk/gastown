@@ -15,6 +15,9 @@ import (
 func TestWorkflowBudgetsRefreshAndRender(t *testing.T) {
 	town := t.TempDir()
 	t.Setenv("GT_WORKFLOW_MAX_LLM_TOKENS", "100")
+	if err := orchestrator.SetWorkflowDollarLimit(town, "rig name", "wf-1", 5); err != nil {
+		t.Fatal(err)
+	}
 	if err := orchestrator.ReserveWorkflowLLMRequest(town, "rig name", "wf-1", 85); err != nil {
 		t.Fatal(err)
 	}
@@ -22,14 +25,14 @@ func TestWorkflowBudgetsRefreshAndRender(t *testing.T) {
 		if r.Method != "GET" || r.URL.Query().Get("rig") != "rig name" || r.URL.Query().Get("workflow") != "wf-1" {
 			t.Errorf("wrong status request: %s", r.URL)
 		}
-		w.Write([]byte(`{"upstream_attempts":8,"upstream_attempt_limit":10,"accounted_cost_usd":4.5,"workflow_allowance_usd":5,"rig_accounted_cost_usd":6,"rig_allowance_usd":20,"accounting":"cost unknown","unknown_cost_requests":2}`))
+		w.Write([]byte(`{"accounted_cost_usd":4.5,"rig_accounted_cost_usd":6,"accounting":"provider-reported cost","unknown_cost_requests":0,"dollar_coverage_complete":true}`))
 	}))
 	defer server.Close()
 	t.Setenv("GT_BUDGET_STATUS_URL", server.URL+"/api/budgets")
 	workflows := map[string][]RigWorkflow{"rig name": {{ID: "wf-1", Status: "running"}}}
 	loadWorkflowBudgets(town, workflows)
 	b := workflows["rig name"][0].Budget
-	if b == nil || b.Cost == nil || !b.PersistedLimits || b.Execution.TokenLimit != 100 {
+	if b == nil || b.Cost == nil || !b.PersistedLimits || b.Execution.TokenLimit != 100 || b.Execution.DollarLimitMicros != 5000000 {
 		t.Fatalf("wrong snapshot: %+v", b)
 	}
 	rendered := (&Model{}).renderWorkflowLine(workflows["rig name"][0])
@@ -38,7 +41,7 @@ func TestWorkflowBudgetsRefreshAndRender(t *testing.T) {
 			t.Errorf("missing %q in %s", want, rendered)
 		}
 	}
-	for _, unwanted := range []string{"Proxy attempts", "Accounting", "Unknown-cost calls", "Requests:"} {
+	for _, unwanted := range []string{"Proxy attempts", "Accounting", "Unknown-cost calls", "Requests:", "allowance"} {
 		if strings.Contains(rendered, unwanted) {
 			t.Errorf("unexpected %q in %s", unwanted, rendered)
 		}
@@ -70,7 +73,7 @@ func TestWorkflowBudgetFailuresRemainVisible(t *testing.T) {
 }
 
 func TestWorkflowCostResponseValidation(t *testing.T) {
-	for _, body := range []string{`{}`, `{"workflow_allowance_usd":-1}`, `{"accounted_cost_usd":-1,"workflow_allowance_usd":5}`, `invalid`} {
+	for _, body := range []string{`{"accounted_cost_usd":-1}`, `{"rig_accounted_cost_usd":-1}`, `invalid`} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte(body)) }))
 		_, err := fetchWorkflowCost(context.Background(), server.Client(), server.URL, "rig", "wf")
 		server.Close()

@@ -2,27 +2,16 @@ package feed
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net"
 	"net/http"
-	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
-type WorkflowCost struct {
-	Accounted    float64  `json:"accounted_cost_usd"`
-	Limit        *float64 `json:"workflow_allowance_usd"`
-	RigAccounted *float64 `json:"rig_accounted_cost_usd"`
-	RigLimit     *float64 `json:"rig_allowance_usd"`
-}
+type WorkflowCost = orchestrator.WorkflowCostStatus
 
 type WorkflowBudget struct {
 	Execution       orchestrator.ExecutionBudget
@@ -30,81 +19,21 @@ type WorkflowBudget struct {
 	ExecutionError  string
 	Cost            *WorkflowCost
 	CostError       string
+	RigLimitMicros  int64
+	RigLimitError   string
 }
 
-// Automatically discover only a local proxy. Remote services opt in explicitly;
-// do not send workflow identities to arbitrary inference providers' API roots.
 func workflowBudgetEndpoint(townRoot string) (string, error) {
-	endpoint := strings.TrimSpace(os.Getenv("GT_BUDGET_STATUS_URL"))
-	if endpoint != "" {
-		u, err := url.Parse(endpoint)
-		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
-			return "", fmt.Errorf("invalid GT_BUDGET_STATUS_URL")
-		}
-		return u.String(), nil
-	}
-	endpoint = strings.TrimSpace(os.Getenv("LLM_ENDPOINT"))
-	if endpoint == "" {
-		settings, err := config.LoadOrCreateTownSettings(config.TownSettingsPath(townRoot))
-		if err != nil {
-			return "", fmt.Errorf("cannot read proxy configuration")
-		}
-		endpoint = settings.LLMEndpoint
-	}
-	if endpoint == "" {
-		endpoint = config.DefaultFreerideProxyEndpoint
-	}
-	u, err := url.Parse(endpoint)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
-		return "", fmt.Errorf("invalid proxy endpoint")
-	}
-	ip := net.ParseIP(u.Hostname())
-	if u.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback()) {
-		return "", fmt.Errorf("set GT_BUDGET_STATUS_URL for remote budget service")
-	}
-	u.Path = "/api/budgets"
-	u.RawPath = ""
-	u.RawQuery = ""
-	u.Fragment = ""
-	return u.String(), nil
+	return orchestrator.WorkflowBudgetStatusEndpoint(townRoot)
 }
 
 func fetchWorkflowCost(ctx context.Context, client *http.Client, endpoint, rig, id string) (*WorkflowCost, error) {
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		return nil, err
-	}
-	q := u.Query()
-	q.Set("rig", rig)
-	q.Set("workflow", id)
-	u.RawQuery = q.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("budget service unreachable")
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("budget service HTTP %d", resp.StatusCode)
-	}
-	var cost WorkflowCost
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&cost); err != nil {
-		return nil, fmt.Errorf("budget API unavailable; rebuild/restart Freeride")
-	}
-	if cost.Limit == nil || *cost.Limit <= 0 || cost.Accounted < 0 {
-		return nil, fmt.Errorf("incomplete budget response")
-	}
-	if (cost.RigAccounted != nil && *cost.RigAccounted < 0) || (cost.RigLimit != nil && *cost.RigLimit <= 0) {
-		return nil, fmt.Errorf("invalid rig budget response")
-	}
-	return &cost, nil
+	return orchestrator.FetchWorkflowCostStatus(ctx, client, endpoint, rig, id)
 }
 
 func loadWorkflowBudgets(townRoot string, byRig map[string][]RigWorkflow) {
 	endpoint, endpointErr := workflowBudgetEndpoint(townRoot)
+	rigLimit, rigLimitErr := orchestrator.RigDollarLimitMicros()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
@@ -120,6 +49,10 @@ func loadWorkflowBudgets(townRoot string, byRig map[string][]RigWorkflow) {
 			budget.Execution, budget.PersistedLimits, err = orchestrator.ReadWorkflowExecutionBudget(townRoot, rig, wf.ID)
 			if err != nil {
 				budget.ExecutionError = "cannot read execution ledger/limits"
+			}
+			budget.RigLimitMicros = rigLimit
+			if rigLimitErr != nil {
+				budget.RigLimitError = "cannot read rig dollar limit"
 			}
 			if endpointErr != nil {
 				budget.CostError = endpointErr.Error()
@@ -158,14 +91,19 @@ func budgetWarning(used, limit float64) string {
 
 func renderWorkflowBudget(b *WorkflowBudget) string {
 	var out strings.Builder
+	workflowLimit := float64(b.Execution.DollarLimitMicros) / 1e6
+	rigLimit := float64(b.RigLimitMicros) / 1e6
 	if b.Cost == nil {
 		fmt.Fprintf(&out, "\n    Cost unavailable: %s", b.CostError)
 	} else {
 		c := b.Cost
-		fmt.Fprintf(&out, "\n    Accounted: $%.4f / $%.2f workflow%s", c.Accounted, *c.Limit, budgetWarning(c.Accounted, *c.Limit))
-		if c.RigAccounted != nil && c.RigLimit != nil {
-			fmt.Fprintf(&out, "\n    Rig accounted: $%.4f / $%.2f%s", *c.RigAccounted, *c.RigLimit, budgetWarning(*c.RigAccounted, *c.RigLimit))
+		fmt.Fprintf(&out, "\n    Accounted: $%.4f / $%.2f%s", c.AccountedUSD, workflowLimit, budgetWarning(c.AccountedUSD, workflowLimit))
+		if c.RigAccountedUSD != nil {
+			fmt.Fprintf(&out, "\n    Rig accounted: $%.4f / $%.2f%s", *c.RigAccountedUSD, rigLimit, budgetWarning(*c.RigAccountedUSD, rigLimit))
 		}
+	}
+	if b.RigLimitError != "" {
+		fmt.Fprintf(&out, "\n    Rig limit unavailable: %s", b.RigLimitError)
 	}
 	if b.ExecutionError != "" {
 		fmt.Fprintf(&out, "\n    Execution unavailable: %s", b.ExecutionError)

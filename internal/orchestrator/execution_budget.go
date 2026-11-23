@@ -12,12 +12,19 @@ import (
 	"github.com/gofrs/flock"
 )
 
+const (
+	defaultWorkflowDollarLimitUSD = 5
+	defaultRigDollarLimitUSD      = 20
+)
+
 // ExecutionBudget is a conservative, durable admission ledger. Reservations are
 // never refunded on errors: an interrupted HTTP call may already have been billed.
 type ExecutionBudget struct {
-	ReservedTokens     int64 `json:"reserved_tokens"`
-	TokenLimit         int64 `json:"token_limit,omitempty"`
-	TokenLimitOverride int64 `json:"token_limit_override,omitempty"`
+	ReservedTokens            int64 `json:"reserved_tokens"`
+	TokenLimit                int64 `json:"token_limit,omitempty"`
+	TokenLimitOverride        int64 `json:"token_limit_override,omitempty"`
+	DollarLimitMicros         int64 `json:"dollar_limit_micros,omitempty"`
+	DollarLimitOverrideMicros int64 `json:"dollar_limit_override_micros,omitempty"`
 }
 
 func executionLimit(name string, fallback int64) (int64, error) {
@@ -30,6 +37,53 @@ func executionLimit(name string, fallback int64) (int64, error) {
 		return 0, fmt.Errorf("execution budget: %s must be a positive integer", name)
 	}
 	return n, nil
+}
+
+func dollarLimitMicros(name string, fallback float64) (int64, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return int64(fallback * 1e6), nil
+	}
+	n, err := strconv.ParseFloat(raw, 64)
+	if err != nil || n <= 0 || n > 1000000 || math.IsNaN(n) || math.IsInf(n, 0) {
+		return 0, fmt.Errorf("execution budget: %s must be a positive finite amount <= 1000000", name)
+	}
+	return int64(n * 1e6), nil
+}
+
+func workflowDollarLimitMicros() (int64, error) {
+	return dollarLimitMicros("GT_WORKFLOW_MAX_COST_USD", defaultWorkflowDollarLimitUSD)
+}
+
+func RigDollarLimitMicros() (int64, error) {
+	return dollarLimitMicros("GT_RIG_MAX_COST_USD", defaultRigDollarLimitUSD)
+}
+
+func executionBudgetPath(townRoot string) string {
+	return filepath.Join(townRoot, "orchestrator", "execution-budgets.json")
+}
+
+func readExecutionBudget(path string) (map[string]ExecutionBudget, error) {
+	ledger := map[string]ExecutionBudget{}
+	data, err := os.ReadFile(path)
+	if err == nil {
+		if err := json.Unmarshal(data, &ledger); err != nil {
+			return nil, fmt.Errorf("execution budget: corrupt ledger: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("execution budget: %w", err)
+	}
+	if ledger == nil {
+		return nil, fmt.Errorf("execution budget: null ledger")
+	}
+	return ledger, nil
+}
+
+func validateExecutionBudget(b ExecutionBudget) error {
+	if b.ReservedTokens < 0 || b.TokenLimit < 0 || b.TokenLimitOverride < 0 || b.DollarLimitMicros < 0 || b.DollarLimitOverrideMicros < 0 {
+		return fmt.Errorf("execution budget: invalid negative reservation or limit")
+	}
+	return nil
 }
 
 // ReserveWorkflowLLMRequest admits one HTTP attempt across all agents and restarts.
@@ -49,7 +103,11 @@ func ReserveWorkflowLLMRequestWithAvailable(townRoot, rig, workflowID string, to
 	if err != nil {
 		return 0, err
 	}
-	path := filepath.Join(townRoot, "orchestrator", "execution-budgets.json")
+	dollarLimit, err := workflowDollarLimitMicros()
+	if err != nil {
+		return 0, err
+	}
+	path := executionBudgetPath(townRoot)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return 0, fmt.Errorf("execution budget: %w", err)
 	}
@@ -58,29 +116,27 @@ func ReserveWorkflowLLMRequestWithAvailable(townRoot, rig, workflowID string, to
 		return 0, fmt.Errorf("execution budget: %w", err)
 	}
 	defer lock.Unlock()
-	ledger := map[string]ExecutionBudget{}
-	data, err := os.ReadFile(path)
-	if err == nil {
-		if err := json.Unmarshal(data, &ledger); err != nil {
-			return 0, fmt.Errorf("execution budget: corrupt ledger: %w", err)
-		}
-	} else if !os.IsNotExist(err) {
-		return 0, fmt.Errorf("execution budget: %w", err)
-	}
-	if ledger == nil {
-		return 0, fmt.Errorf("execution budget: null ledger")
+	ledger, err := readExecutionBudget(path)
+	if err != nil {
+		return 0, err
 	}
 	keyBytes, _ := json.Marshal([]string{rig, workflowID})
 	key := string(keyBytes)
 	used := ledger[key]
-	if used.ReservedTokens < 0 || used.TokenLimit < 0 || used.TokenLimitOverride < 0 {
-		return 0, fmt.Errorf("execution budget: invalid negative reservation")
+	if err := validateExecutionBudget(used); err != nil {
+		return 0, err
 	}
 	if strings.TrimSpace(os.Getenv("GT_WORKFLOW_MAX_LLM_TOKENS")) == "" && used.TokenLimit > 0 {
 		tokenLimit = used.TokenLimit
 	}
 	if used.TokenLimitOverride > 0 {
 		tokenLimit = used.TokenLimitOverride
+	}
+	if strings.TrimSpace(os.Getenv("GT_WORKFLOW_MAX_COST_USD")) == "" && used.DollarLimitMicros > 0 {
+		dollarLimit = used.DollarLimitMicros
+	}
+	if used.DollarLimitOverrideMicros > 0 {
+		dollarLimit = used.DollarLimitOverrideMicros
 	}
 	available := int64(0)
 	if used.ReservedTokens < tokenLimit {
@@ -90,6 +146,7 @@ func ReserveWorkflowLLMRequestWithAvailable(townRoot, rig, workflowID string, to
 		return available, fmt.Errorf("execution budget exhausted for %s/%s (%d reserved tokens; requested %d reservation units, %d available, token limit %d); review ledger and limits before resuming", rig, workflowID, used.ReservedTokens, tokens, available, tokenLimit)
 	}
 	used.TokenLimit = tokenLimit
+	used.DollarLimitMicros = dollarLimit
 	used.ReservedTokens += tokens
 	ledger[key] = used
 	if err := writeExecutionBudgetLedger(path, ledger); err != nil {
@@ -103,7 +160,7 @@ func SetWorkflowTokenLimit(townRoot, rig, workflowID string, limit int64) error 
 	if townRoot == "" || rig == "" || workflowID == "" || limit <= 0 {
 		return fmt.Errorf("execution budget: town, rig, workflow, and a positive token limit are required")
 	}
-	path := filepath.Join(townRoot, "orchestrator", "execution-budgets.json")
+	path := executionBudgetPath(townRoot)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("execution budget: %w", err)
 	}
@@ -112,23 +169,15 @@ func SetWorkflowTokenLimit(townRoot, rig, workflowID string, limit int64) error 
 		return fmt.Errorf("execution budget: %w", err)
 	}
 	defer lock.Unlock()
-	ledger := map[string]ExecutionBudget{}
-	data, err := os.ReadFile(path)
-	if err == nil {
-		if err := json.Unmarshal(data, &ledger); err != nil {
-			return fmt.Errorf("execution budget: corrupt ledger: %w", err)
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("execution budget: %w", err)
-	}
-	if ledger == nil {
-		return fmt.Errorf("execution budget: null ledger")
+	ledger, err := readExecutionBudget(path)
+	if err != nil {
+		return err
 	}
 	keyBytes, _ := json.Marshal([]string{rig, workflowID})
 	key := string(keyBytes)
 	used := ledger[key]
-	if used.ReservedTokens < 0 || used.TokenLimit < 0 || used.TokenLimitOverride < 0 {
-		return fmt.Errorf("execution budget: invalid negative reservation")
+	if err := validateExecutionBudget(used); err != nil {
+		return err
 	}
 	if limit <= used.ReservedTokens {
 		return fmt.Errorf("execution budget: token limit must exceed the %d tokens already reserved", used.ReservedTokens)
@@ -139,26 +188,17 @@ func SetWorkflowTokenLimit(townRoot, rig, workflowID string, limit int64) error 
 	return writeExecutionBudgetLedger(path, ledger)
 }
 
-// SetWorkflowDollarLimit writes a per-workflow USD allowance beside the proxy ledger.
-func SetWorkflowDollarLimit(budgetPath, rig, workflowID string, limitUSD float64) error {
-	if budgetPath == "" || rig == "" || workflowID == "" || limitUSD <= 0 || limitUSD > 1000000 || math.IsNaN(limitUSD) || math.IsInf(limitUSD, 0) {
-		return fmt.Errorf("execution budget: budget path, rig, workflow, and a finite USD limit in (0, 1000000] are required")
+// SetWorkflowDollarLimit writes a durable dollar-limit override for one workflow.
+func SetWorkflowDollarLimit(townRoot, rig, workflowID string, limitUSD float64) error {
+	if townRoot == "" || rig == "" || workflowID == "" || limitUSD <= 0 || limitUSD > 1000000 || math.IsNaN(limitUSD) || math.IsInf(limitUSD, 0) {
+		return fmt.Errorf("execution budget: town, rig, workflow, and a finite USD limit in (0, 1000000] are required")
 	}
-	limit := int64(math.Round(limitUSD * 1000000))
+	limit := int64(math.Round(limitUSD * 1e6))
 	if limit <= 0 {
 		return fmt.Errorf("execution budget: USD limit is below one microdollar")
 	}
-	costLedger, err := readExecutionBudgetValues(budgetPath + ".usd")
-	if err != nil {
-		return err
-	}
-	keyBytes, _ := json.Marshal([]string{rig, workflowID})
-	key := string(keyBytes)
-	if costLedger[key] >= limit {
-		return fmt.Errorf("execution budget: USD limit must exceed the $%.6f already accounted for this workflow", float64(costLedger[key])/1000000)
-	}
-	path := budgetPath + ".limits"
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	path := executionBudgetPath(townRoot)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("execution budget: %w", err)
 	}
 	lock := flock.New(path + ".lock")
@@ -166,38 +206,20 @@ func SetWorkflowDollarLimit(budgetPath, rig, workflowID string, limitUSD float64
 		return fmt.Errorf("execution budget: %w", err)
 	}
 	defer lock.Unlock()
-	limits, err := readExecutionBudgetValues(path)
+	ledger, err := readExecutionBudget(path)
 	if err != nil {
 		return err
 	}
-	for _, current := range limits {
-		if current == 0 || current > 1000000000000 {
-			return fmt.Errorf("execution budget: invalid workflow dollar limit")
-		}
+	keyBytes, _ := json.Marshal([]string{rig, workflowID})
+	key := string(keyBytes)
+	used := ledger[key]
+	if err := validateExecutionBudget(used); err != nil {
+		return err
 	}
-	limits[key] = limit
-	return writeExecutionBudgetMap(path, limits)
-}
-
-func readExecutionBudgetValues(path string) (map[string]int64, error) {
-	values := map[string]int64{}
-	data, err := os.ReadFile(path)
-	if err == nil {
-		if err := json.Unmarshal(data, &values); err != nil {
-			return nil, fmt.Errorf("execution budget: corrupt ledger %s: %w", path, err)
-		}
-	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("execution budget: %w", err)
-	}
-	if values == nil {
-		return nil, fmt.Errorf("execution budget: null ledger %s", path)
-	}
-	for _, value := range values {
-		if value < 0 {
-			return nil, fmt.Errorf("execution budget: negative ledger value in %s", path)
-		}
-	}
-	return values, nil
+	used.DollarLimitMicros = limit
+	used.DollarLimitOverrideMicros = limit
+	ledger[key] = used
+	return writeExecutionBudgetLedger(path, ledger)
 }
 
 func writeExecutionBudgetLedger(path string, ledger map[string]ExecutionBudget) error {
@@ -234,30 +256,30 @@ func writeExecutionBudgetMap(path string, value any) error {
 // ReadWorkflowExecutionBudget reads an atomic ledger snapshot without changing it.
 // New admissions persist enforcing-process limits; legacy rows use local settings.
 func ReadWorkflowExecutionBudget(townRoot, rig, workflowID string) (ExecutionBudget, bool, error) {
-	data, err := os.ReadFile(filepath.Join(townRoot, "orchestrator", "execution-budgets.json"))
-	ledger := map[string]ExecutionBudget{}
-	if err != nil && !os.IsNotExist(err) {
+	ledger, err := readExecutionBudget(executionBudgetPath(townRoot))
+	if err != nil {
 		return ExecutionBudget{}, false, err
-	}
-	if err == nil {
-		if err = json.Unmarshal(data, &ledger); err != nil {
-			return ExecutionBudget{}, false, err
-		}
-		if ledger == nil {
-			return ExecutionBudget{}, false, fmt.Errorf("null execution budget ledger")
-		}
 	}
 	key, _ := json.Marshal([]string{rig, workflowID})
 	used := ledger[string(key)]
-	if used.ReservedTokens < 0 || used.TokenLimit < 0 || used.TokenLimitOverride < 0 {
-		return used, false, fmt.Errorf("invalid negative execution budget")
+	if err := validateExecutionBudget(used); err != nil {
+		return used, false, err
 	}
+	persisted := used.TokenLimit > 0 || used.DollarLimitMicros > 0
 	if used.TokenLimitOverride > 0 {
 		used.TokenLimit = used.TokenLimitOverride
 	}
-	persisted := used.TokenLimit > 0
+	if used.DollarLimitOverrideMicros > 0 {
+		used.DollarLimitMicros = used.DollarLimitOverrideMicros
+	}
 	if used.TokenLimit == 0 {
 		used.TokenLimit, err = executionLimit("GT_WORKFLOW_MAX_LLM_TOKENS", 20000000)
+		if err != nil {
+			return used, false, err
+		}
+	}
+	if used.DollarLimitMicros == 0 {
+		used.DollarLimitMicros, err = workflowDollarLimitMicros()
 		if err != nil {
 			return used, false, err
 		}

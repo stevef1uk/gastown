@@ -337,6 +337,10 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 	previousAdmission, previousHeaders := client.BeforeRequest, client.TaskHeaders
 	defer func() { client.BeforeRequest, client.TaskHeaders = previousAdmission, previousHeaders }()
 	client.BeforeRequest = func(tokens int64) error {
+		if err := orchestrator.CheckWorkflowDollarBudget(townRoot, rig, task.WorkflowID); err != nil {
+			orchestratedPrintf("[gt-agent] workflow LLM dollar budget denied: %v\n", err)
+			return err
+		}
 		available, err := orchestrator.ReserveWorkflowLLMRequestWithAvailable(townRoot, rig, task.WorkflowID, tokens)
 		requestBytes := tokens - 8192
 		if requestBytes < 0 {

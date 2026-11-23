@@ -222,6 +222,11 @@ func TestTestReviewAcceptsEarlyFailureWithCommands(t *testing.T) {
 		WorkflowID: "wf-test-review", State: "test_review", Rig: rig,
 		AllowedOutcomes: []string{"success", "failure", "plan_gap", "architecture_failure"},
 	}
+	budgetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"accounted_cost_usd":0,"rig_accounted_cost_usd":0,"accounting":"no completed priced calls","dollar_coverage_complete":true}`))
+	}))
+	defer budgetServer.Close()
+	t.Setenv("GT_BUDGET_STATUS_URL", budgetServer.URL+"/api/budgets")
 	client := llm.NewClient(server.URL, "test", "tester", time.Second)
 	outcome, summary, _, err := executeOrchestratedTask(context.Background(), client, town, rig, "", task, nil)
 	if err != nil || outcome != "failure" || !strings.Contains(summary, "No tests found") || calls != 1 {
@@ -258,6 +263,11 @@ func TestTestReviewRequestsClassificationBeforeFailure(t *testing.T) {
 		Validation:      orchestrator.WorkflowValidation{LayoutRoot: "app"},
 		AllowedOutcomes: []string{"success", "failure", "plan_gap", "architecture_failure"},
 	}
+	budgetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"accounted_cost_usd":0,"rig_accounted_cost_usd":0,"accounting":"no completed priced calls","dollar_coverage_complete":true}`))
+	}))
+	defer budgetServer.Close()
+	t.Setenv("GT_BUDGET_STATUS_URL", budgetServer.URL+"/api/budgets")
 	client := llm.NewClient(server.URL, "test", "tester", time.Second)
 	outcome, summary, _, err := executeOrchestratedTask(context.Background(), client, town, rig, "", task, nil)
 	if err != nil || outcome != "failure" || !strings.Contains(summary, "Test repair:") || calls != 2 {

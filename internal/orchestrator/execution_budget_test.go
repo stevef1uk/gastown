@@ -97,30 +97,27 @@ func TestWorkflowTokenLimitOverride(t *testing.T) {
 }
 
 func TestWorkflowDollarLimitOverride(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "execution-budgets.json")
-	if err := os.WriteFile(path+".usd", []byte(`{"[\"rig\",\"wf\"]":714426}`), 0600); err != nil {
+	town := t.TempDir()
+	if err := SetWorkflowDollarLimit(town, "rig", "wf", 10); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetWorkflowDollarLimit(path, "rig", "wf", 10); err != nil {
+	ledger, err := readExecutionBudget(executionBudgetPath(town))
+	if err != nil {
 		t.Fatal(err)
 	}
-	limits, err := readExecutionBudgetValues(path + ".limits")
-	if err != nil || limits[`["rig","wf"]`] != 10000000 {
-		t.Fatalf("limits=%v err=%v", limits, err)
+	got := ledger[`["rig","wf"]`]
+	if got.DollarLimitOverrideMicros != 10000000 || got.DollarLimitMicros != 10000000 {
+		t.Fatalf("dollar limit not persisted locally: %+v", got)
 	}
-	if err := SetWorkflowDollarLimit(path, "rig", "wf", 0.714426); err == nil {
-		t.Fatal("accepted a dollar limit equal to already-accounted usage")
+	if err := SetWorkflowDollarLimit(town, "rig", "wf", 0); err == nil {
+		t.Fatal("accepted a zero dollar limit")
 	}
-	if err := os.WriteFile(path+".usd", []byte(`{"[\"rig\",\"wf\"]":-1}`), 0600); err != nil {
+	path := executionBudgetPath(town)
+	if err := os.WriteFile(path, []byte(`{"[\"rig\",\"wf\"]":{"dollar_limit_micros":-1}}`), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetWorkflowDollarLimit(path, "rig", "wf", 20); err == nil {
-		t.Fatal("accepted a negative cost ledger")
-	}
-	var persisted map[string]int64
-	data, err := os.ReadFile(path + ".limits")
-	if err != nil || json.Unmarshal(data, &persisted) != nil || persisted[`["rig","wf"]`] != 10000000 {
-		t.Fatalf("persisted limits=%s err=%v", data, err)
+	if err := SetWorkflowDollarLimit(town, "rig", "wf", 20); err == nil {
+		t.Fatal("accepted a negative dollar limit")
 	}
 }
 

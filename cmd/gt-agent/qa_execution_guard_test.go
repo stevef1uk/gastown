@@ -165,6 +165,11 @@ func TestQAExecutionResult_RequestsMissingEvidenceBeforeSubmitting(t *testing.T)
 				Hooks:           orchestrator.StateHooks{Track: "qa", VerificationErrorLimit: 3, MaxCmdTurns: 4, RequireExplicitOutcome: true},
 				AllowedOutcomes: []string{"failure", "verification_error"},
 			}
+			budgetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Write([]byte(`{"accounted_cost_usd":0,"rig_accounted_cost_usd":0,"accounting":"no completed priced calls","dollar_coverage_complete":true}`))
+			}))
+			defer budgetServer.Close()
+			t.Setenv("GT_BUDGET_STATUS_URL", budgetServer.URL+"/api/budgets")
 			client := llm.NewClient(server.URL, "test", "qa", time.Second)
 			outcome, summary, _, err := executeOrchestratedTask(context.Background(), client, town, rig, "", task, nil)
 			report, ok := orchestrator.ParseQAFailureReport(summary)
@@ -199,6 +204,11 @@ func TestQAExecutionResult_IncompleteReportExhaustsTurns(t *testing.T) {
 		Hooks:           orchestrator.StateHooks{Track: "qa", VerificationErrorLimit: 3, MaxCmdTurns: 2},
 		AllowedOutcomes: []string{"failure", "verification_error"},
 	}
+	budgetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"accounted_cost_usd":0,"rig_accounted_cost_usd":0,"accounting":"no completed priced calls","dollar_coverage_complete":true}`))
+	}))
+	defer budgetServer.Close()
+	t.Setenv("GT_BUDGET_STATUS_URL", budgetServer.URL+"/api/budgets")
 	client := llm.NewClient(server.URL, "test", "qa", time.Second)
 	outcome, summary, feedback, err := executeOrchestratedTask(context.Background(), client, town, rig, "", task, nil)
 	if err == nil || outcome != "fail" || calls != 2 || !strings.Contains(feedback, "evidence") ||
