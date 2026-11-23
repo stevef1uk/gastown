@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/formula"
 	"github.com/steveyegge/gastown/internal/orchestrator"
 )
@@ -40,6 +41,9 @@ func Sync(townRoot string) (*SyncResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("orchestrator sync: %w", err)
 	}
+
+	_, _ = config.SyncRoleAgentsFromFreerideModels(townRoot)
+	_ = config.EnsureFreerideModelsFile(townRoot)
 
 	updated, skipped, reinstalled, err := formula.UpdateFormulas(townRoot)
 	if err != nil {
