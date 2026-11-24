@@ -258,7 +258,7 @@ func (r *stateRunner) implementBeadCloseArtifactsReady() bool {
 		return false
 	}
 	if testPath := orchestrator.CorrelatedTestPathForSource(beadPath, r.v); testPath != "" {
-		if !orchestrator.TestPathListedInRequired(beadPath, r.v) {
+		if orchestrator.TestPathListedInRequired(beadPath, r.v) {
 			if err := orchestrator.ValidateBeadArtifactOnDisk(rigDir, testPath, r.v); err != nil {
 				return false
 			}
@@ -284,17 +284,24 @@ func (r *stateRunner) rejectRedundantImplementEditAfterVerify(relPath string) er
 	if !r.track.verifyOK {
 		return nil
 	}
+	// Never reject test files — expanding or repairing tests is always allowed.
+	layout := strings.Trim(strings.TrimSpace(r.v.LayoutRoot), "/")
+	rel := orchestrator.NormalizeBeadPathForLayout(relPath, layout)
+	if strings.HasSuffix(rel, "_test.go") || orchestrator.IsTestImplementPath(rel) {
+		return nil
+	}
+	// Never reject when rework is active from QA or test review.
+	if r.task != nil && r.task.PendingRework != nil {
+		return nil
+	}
 	if !r.implementBeadCloseArtifactsReady() {
 		return nil
 	}
-	layout := strings.Trim(strings.TrimSpace(r.v.LayoutRoot), "/")
-	rel := orchestrator.NormalizeBeadPathForLayout(relPath, layout)
 	active := strings.TrimSpace(r.activeImplementBeadPath())
 	if active == "" {
 		return nil
 	}
-	corrTest := orchestrator.CorrelatedTestPathForSource(active, r.v)
-	if rel != active && (corrTest == "" || rel != corrTest) {
+	if rel != active {
 		return nil
 	}
 	return fmt.Errorf("verify already green for active bead %s — run `bd close %s` instead of editing %s", beadID, beadID, rel)
@@ -370,6 +377,9 @@ func (r *stateRunner) clearStaleImplementationVerifyFailureOnResume() {
 // active bead's verify command is red again (e.g. broken *_test.go after a prior flaky green run).
 func (r *stateRunner) clearStaleImplementationVerifyMilestoneOnResume() {
 	if r.implProgress == nil || r.track == nil || r.track.activeBead == "" {
+		return
+	}
+	if r.task != nil && r.task.PendingRework != nil {
 		return
 	}
 	if !r.implProgress.done(implVerifyKey(r.track.activeBead)) {

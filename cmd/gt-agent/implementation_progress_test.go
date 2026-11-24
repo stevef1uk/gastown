@@ -264,12 +264,15 @@ func TestRejectRedundantImplementEditAfterVerify_allowsEditWhenOnlyPersistedMile
 	runner.track.activeBead = "te-g7q"
 	runner.track.activeBeadPath = "linkshelf/internal/store/schema.go"
 	runner.track.verifyOK = false
-	if err := runner.rejectRedundantImplementEditAfterVerify("linkshelf/internal/store/schema_test.go"); err != nil {
+	if err := runner.rejectRedundantImplementEditAfterVerify("linkshelf/internal/store/schema.go"); err != nil {
 		t.Fatalf("edit should be allowed without session verifyOK: %v", err)
 	}
 	runner.track.verifyOK = true
-	if err := runner.rejectRedundantImplementEditAfterVerify("linkshelf/internal/store/schema_test.go"); err == nil {
-		t.Fatal("edit should be blocked when verifyOK is true this session")
+	if err := runner.rejectRedundantImplementEditAfterVerify("linkshelf/internal/store/schema.go"); err == nil {
+		t.Fatal("edit to active source should be blocked when verifyOK is true this session")
+	}
+	if err := runner.rejectRedundantImplementEditAfterVerify("linkshelf/internal/store/schema_test.go"); err != nil {
+		t.Fatalf("test file edits must remain allowed even when verifyOK is true: %v", err)
 	}
 }
 
