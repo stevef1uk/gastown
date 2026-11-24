@@ -1153,7 +1153,7 @@ func (r *stateRunner) tryAutoReviewRecovery() (outcome, summary string, ok bool)
 
 	switch pr.FromState {
 	case "test_review":
-		if strings.Contains(lowerSummary, "plan_gap") || strings.Contains(lowerSummary, "test_plan") {
+		if strings.Contains(lowerSummary, "plan_gap") {
 			orchestratedPrintf("[gt-agent] auto-routing review_recovery from test_review to tester_rework\n")
 			return "tester_rework", "Auto-routed to Tester for TEST_PLAN rework: " + pr.Summary, true
 		}
