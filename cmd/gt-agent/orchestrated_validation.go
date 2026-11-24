@@ -195,6 +195,15 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 			return true
 		}
 	}
+	if orchestrator.WorkflowUsesGo(v) && rig != "" {
+		mayorDir := rigMayorRigDir(townRoot, rig)
+		resolvedBead, _ := orchestrator.ResolveImplementBeadForVerify(townRoot, rig, activeBead, v)
+		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, resolvedBead, v)
+		impl := orchestrator.ImplementationVerifyCommandForBead(v, mayorDir, beadPath)
+		if goVerifyCommandMatches(cmd, impl, v) {
+			return true
+		}
+	}
 	if orchestrator.WorkflowUsesDocker(v) && rig != "" {
 		mayorDir := filepath.Join(townRoot, rig, "mayor", "rig")
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
@@ -203,8 +212,8 @@ func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v or
 			return true
 		}
 	}
-	if orchestrator.WorkflowUsesDocker(v) {
-		return isQATestCommandOK(cmd, v)
+	if orchestrator.WorkflowUsesDocker(v) && isQATestCommandOK(cmd, v) {
+		return true
 	}
 	if !orchestrator.WorkflowUsesGo(v) || rig == "" {
 		return false
@@ -277,9 +286,12 @@ func implementationVerifyAttemptBeforeBdClose(cmd, townRoot, rig, activeBead str
 	parts := strings.Split(cmd, "&&")
 	for i, part := range parts {
 		if isBeadCloseCommand(part) {
-			for j := 0; j < i; j++ {
-				if isImplementationVerifyCommandOK(strings.TrimSpace(parts[j]), townRoot, rig, activeBead, v) {
-					return true
+			for start := 0; start < i; start++ {
+				for end := start + 1; end <= i; end++ {
+					sub := strings.TrimSpace(strings.Join(parts[start:end], " && "))
+					if isImplementationVerifyCommandOK(sub, townRoot, rig, activeBead, v) {
+						return true
+					}
 				}
 			}
 			return false

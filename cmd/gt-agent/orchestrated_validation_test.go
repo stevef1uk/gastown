@@ -175,3 +175,72 @@ func TestGoVerifyCommandMatches_goModTidyDownloadEquivalence(t *testing.T) {
 		t.Fatal("go build should not match go mod tidy")
 	}
 }
+
+func TestIsImplementationVerifyCommandOK_goProjectWithDocker(t *testing.T) {
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "in_progress" {
+			return []orchestrator.PlanBead{{ID: "ta-jl3", Title: "Implement taskboard/internal/web/ui_content_test.go per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
+
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "taskboard",
+		TestRunner:      "go",
+		QAVerifyCommand: "cd taskboard && go test ./...",
+		RequiredFiles: []string{
+			"taskboard/internal/web/ui_content_test.go",
+			"taskboard/internal/web/app_test.go",
+			"taskboard/Dockerfile",
+		},
+		ActivePhaseIDField: "phase-2",
+		DeliveryPhases: []orchestrator.DeliveryPhase{
+			{
+				ID: "phase-2",
+				RequiredFiles: []string{
+					"taskboard/internal/web/ui_content_test.go",
+				},
+				QAVerifyCommand: "cd taskboard && go test ./...",
+			},
+		},
+	}
+	cmd := "cd tasktracker/mayor/rig/taskboard && go mod tidy && go test -timeout 30s -count=1 ./internal/web/..."
+	if !isImplementationVerifyCommandOK(cmd, t.TempDir(), "tasktracker", "ta-jl3", v) {
+		t.Fatal("expected package-scoped go test verify command to be accepted for go project with Dockerfile")
+	}
+}
+
+func TestImplementationVerifyAttemptBeforeBdClose_chainedSubslice(t *testing.T) {
+	orchestrator.ListImplementBeadsByStatusHook = func(_, _ string, _ orchestrator.WorkflowValidation, status string) ([]orchestrator.PlanBead, error) {
+		if status == "in_progress" {
+			return []orchestrator.PlanBead{{ID: "ta-jl3", Title: "Implement taskboard/internal/web/ui_content_test.go per architecture"}}, nil
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { orchestrator.ListImplementBeadsByStatusHook = nil })
+
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "taskboard",
+		TestRunner:      "go",
+		QAVerifyCommand: "cd taskboard && go test ./...",
+		RequiredFiles: []string{
+			"taskboard/internal/web/ui_content_test.go",
+			"taskboard/Dockerfile",
+		},
+		ActivePhaseIDField: "phase-2",
+		DeliveryPhases: []orchestrator.DeliveryPhase{
+			{
+				ID: "phase-2",
+				RequiredFiles: []string{
+					"taskboard/internal/web/ui_content_test.go",
+				},
+				QAVerifyCommand: "cd taskboard && go test ./...",
+			},
+		},
+	}
+	cmd := "export BEADS_DIR=$GT_ROOT/tasktracker/.beads && cd tasktracker/mayor/rig/taskboard && go mod tidy && go test -timeout 30s -count=1 ./internal/web/... && cd .. && bd close ta-jl3"
+	if !implementationVerifyAttemptBeforeBdClose(cmd, t.TempDir(), "tasktracker", "ta-jl3", v) {
+		t.Fatal("expected chained verify-and-close command to be accepted")
+	}
+}
