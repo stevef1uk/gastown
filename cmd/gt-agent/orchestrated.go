@@ -3752,8 +3752,17 @@ func validateTestPlanBeadIDs(townRoot, rig string, v orchestrator.WorkflowValida
 	if prefix == "" {
 		return nil
 	}
+	activePhase := ""
+	if v.HasPhasedDelivery() {
+		activePhase = strings.ToLower(strings.TrimSpace(v.ActivePhaseID()))
+	}
 	var invalid []string
 	for _, b := range blocks {
+		if activePhase != "" && strings.TrimSpace(b.Phase) != "" && strings.ToLower(strings.TrimSpace(b.Phase)) != activePhase {
+			// Only the active delivery phase requires existing beads in bd list;
+			// future phases do not have beads created yet, and completed phases may be closed/purged.
+			continue
+		}
 		for _, beadID := range orchestrator.SplitTestPlanBeadIDs(b.BeadID) {
 			// Skip placeholder bead IDs that don't match the rig's prefix pattern.
 			if !strings.HasPrefix(strings.ToLower(beadID), strings.ToLower(prefix)+"-") {
