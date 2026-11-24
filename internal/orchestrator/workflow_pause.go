@@ -103,6 +103,9 @@ func (m *Manager) ResumeWorkflow(workflowID string) error {
 	}
 	inst.Status = "running"
 	inst.PauseReason = ""
+	if inst.ReviewProgress != nil {
+		delete(inst.ReviewProgress, inst.CurrentState)
+	}
 	if err := m.persistLocked(); err != nil {
 		return fmt.Errorf("persist instances: %w", err)
 	}

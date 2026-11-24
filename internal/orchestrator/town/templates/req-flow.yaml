@@ -118,7 +118,7 @@ states:
       track: design
       artifacts: design
       no_progress_limit: 3
-      progress_files: [.gastown/workflow-profile.json]
+      progress_files: [architecture.md]
       retry_hint: |
         One CMD: per line. FIRST read SPEC and the full existing architecture.md. On any rework, use sed -i or patch for the named defects and directly affected references; preserve unrelated content and completed phases. Use a single-quoted heredoc only for a missing document. After wc -c meets minimum and validation passes, summarize the amendment.
       failure_hint: |
@@ -146,7 +146,7 @@ states:
       track: qa
       artifacts: design_review
       no_progress_limit: 3
-      progress_files: [.gastown/workflow-profile.json]
+      progress_files: [architecture.md]
       cmd_before_outcome_nudge: |
         You reported an outcome without reading any files, so it is not grounded in evidence. You MUST inspect the artifacts first — one CMD: per line:
         CMD: wc -c architecture.md
