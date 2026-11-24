@@ -7,10 +7,10 @@ import (
 
 func TestRigPipelineSessionIDs_includesRoles(t *testing.T) {
 	ids := RigPipelineSessionIDs("testgt3")
-	if len(ids) != 3 {
+	if len(ids) != 5 {
 		t.Fatalf("got %v", ids)
 	}
-	for _, role := range []string{"architect", "qa", "polecat"} {
+	for _, role := range []string{"architect", "qa", "polecat", "planner", "analyst"} {
 		found := false
 		for _, id := range ids {
 			if strings.Contains(id, "testgt3") && strings.Contains(id, role) {

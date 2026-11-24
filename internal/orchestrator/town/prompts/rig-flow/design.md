@@ -135,7 +135,12 @@ State how pieces connect; full-suite command from workflow-profile.json or proje
 (how pieces connect; full-suite command from workflow-profile.json or project convention)
 
 ## Docker & Deployment
-(Include only when the workflow profile lists Dockerfile or docker-compose in required_files or QA verify command. Omit otherwise.)
+(Include only when the workflow profile lists Dockerfile or docker-compose in required_files or QA verify command. Omit otherwise. When an application Dockerfile is required, MUST explicitly document:
+1. Base images used in the Dockerfile for each stage (e.g. `golang:1.24-alpine`, `node:20-slim`, `python:3.12-slim`).
+2. Clear description of multi-stage build steps (builder stage compiling artifacts, final runtime stage copying artifacts).
+3. Explicit exposed port (e.g. `EXPOSE 8080`).
+4. Exact CMD or ENTRYPOINT directive used to run the server, e.g. `CMD ["/app/server"]` or `ENTRYPOINT ["uvicorn", "app.main:app", ...]`).
+
 
 ## E2E / integration testing
 (Include only when the workflow profile lists e2e/playwright phases. Omit otherwise.)

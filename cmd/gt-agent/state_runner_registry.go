@@ -142,6 +142,7 @@ var trackHandlers = map[string]trackFn{
 		// Trust the filesystem clock: a successful CMD that touched
 		// architecture.md during THIS attempt counts as the required write.
 		if cmdErr == nil && fileWrittenThisRun(rigMayorRigDir(r.townRoot, r.rig), "architecture.md", r.track.startedAt) {
+			r.track.hadCmdFailure = false
 			r.track.designArchWritten = true
 			if r.task.Variables == nil {
 				r.task.Variables = make(map[string]string)
