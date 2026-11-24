@@ -1560,6 +1560,9 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		filteredPhaseIDs = append(filteredPhaseIDs, id)
 	}
 	phaseIDsStr := strings.Join(filteredPhaseIDs, ", ")
+	if len(filteredPhaseIDs) == 0 {
+		phaseIDsStr = "none (setup-only phase — no automated tests due)"
+	}
 
 	// ALL delivery phase IDs for prompts that need the full list (avoids agent reading workflow-profile.json which can truncate).
 	allPhaseIDs := make([]string, 0, len(v.DeliveryPhases))
