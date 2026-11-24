@@ -211,13 +211,22 @@ func TestSimplifyDevServerSmoke_flatGoRunDot(t *testing.T) {
 }
 
 func TestIsDevServerSmokeCommand_flatGoRunDot(t *testing.T) {
-	for _, in := range []string{"go run .", "cd helloapi && go run .", "go run ./", "go run main.go", "go run ./main.go"} {
+	for _, in := range []string{"go run .", "cd helloapi && go run .", "go run ./", "go run main.go", "go run ./main.go", "cd helloapi && (go run main.go >/tmp/srv.log 2>&1 &) && sleep 3 && curl http://localhost:8080/hello"} {
 		if !orchestrator.IsDevServerSmokeCommand(in) {
 			t.Fatalf("IsDevServerSmokeCommand(%q) should be true for flat-layout Go server", in)
 		}
 		if !isGoDevServerSmokeCommand(in) {
 			t.Fatalf("isGoDevServerSmokeCommand(%q) should be true", in)
 		}
+	}
+	if got := normalizeGoRunTarget("go run main.go"); got != "go run ." {
+		t.Fatalf("normalizeGoRunTarget(go run main.go) = %q, want 'go run .'", got)
+	}
+	if got := normalizeGoRunTarget("(go run main.go >/tmp/srv.log 2>&1 &)"); got != "(go run . >/tmp/srv.log 2>&1 &)" {
+		t.Fatalf("normalizeGoRunTarget = %q", got)
+	}
+	if got := normalizeGoRunTarget("go run cmd/server/main.go"); got != "go run ./cmd/server" {
+		t.Fatalf("normalizeGoRunTarget = %q", got)
 	}
 	for _, in := range []string{"go test ./...", "go vet ./...", "go build ./...", "cd helloapi && go mod tidy"} {
 		if orchestrator.IsDevServerSmokeCommand(in) {

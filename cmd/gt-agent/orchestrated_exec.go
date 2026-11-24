@@ -298,6 +298,16 @@ func isToolchainExecutionCommand(cmd string) bool {
 	return false
 }
 
+var (
+	goRunCmdServerMainRE = regexp.MustCompile(`\bgo\s+run\s+(\./)?cmd/server/main\.go\b`)
+	goRunMainRE          = regexp.MustCompile(`\bgo\s+run\s+(\./)?main\.go\b`)
+)
+
+func normalizeGoRunTarget(cmd string) string {
+	cmd = goRunCmdServerMainRE.ReplaceAllString(cmd, "go run ./cmd/server")
+	return goRunMainRE.ReplaceAllString(cmd, "go run .")
+}
+
 // isGoDevServerSmokeCommand reports go run ./cmd/server (with or without curl).
 // Also detects go run . or go run ./ for flat-layout projects (e.g., helloapi).
 func isGoDevServerSmokeCommand(cmd string) bool {
@@ -307,8 +317,9 @@ func isGoDevServerSmokeCommand(cmd string) bool {
 	}
 	parts := strings.Fields(lower)
 	for i, p := range parts {
-		if p == "go" && i+1 < len(parts) && parts[i+1] == "run" && i+2 < len(parts) {
-			runArg := parts[i+2]
+		token := strings.TrimLeft(p, "([{\"'`")
+		if token == "go" && i+1 < len(parts) && strings.Trim(parts[i+1], `"'`) == "run" && i+2 < len(parts) {
+			runArg := strings.TrimRight(parts[i+2], ")]};\"'`")
 			if runArg == "." || runArg == "./" || runArg == "main.go" || runArg == "./main.go" {
 				return true
 			}
@@ -1309,6 +1320,14 @@ func normalizeGoDevServerSmokeCommand(cmd, townRoot, rig string, v orchestrator.
 		out = goSmokeStripTidyRE.ReplaceAllString(out, "")
 		changed = true
 	}
+	if goRunCmdServerMainRE.MatchString(out) {
+		out = goRunCmdServerMainRE.ReplaceAllString(out, "go run ./cmd/server")
+		changed = true
+	}
+	if goRunMainRE.MatchString(out) {
+		out = goRunMainRE.ReplaceAllString(out, "go run .")
+		changed = true
+	}
 	if short, ok := simplifyDevServerSmoke(out, townRoot, rig, v); ok {
 		return short, true
 	}
@@ -1472,6 +1491,8 @@ func simplifyDevServerSmoke(cmd, townRoot, rig string, v orchestrator.WorkflowVa
 	if spec.ServerStart == "" {
 		if orchestrator.WorkflowUsesPython(v) {
 			spec.ServerStart = orchestrator.ExtractPythonServerStartFromText(cmd)
+		} else if orchestrator.IsFlatGoServerCommand(cmd) || !strings.Contains(cmd, "cmd/server") {
+			spec.ServerStart = "go run ."
 		} else {
 			spec.ServerStart = "go run ./cmd/server"
 		}
@@ -1677,6 +1698,7 @@ func runOrchestratedCommand(cmd, workDir, sessionName string, env []string, cmdT
 	// friends) abuse preinstall/postinstall hooks to run credential-stealing payloads
 	// during "npm install".
 	cmd = orchestrator.HardenNodeInstallCommand(cmd)
+	cmd = normalizeGoRunTarget(cmd)
 	logCmd := truncateCmdForLog(cmd, 120)
 	orchestratedPrintf("[gt-agent] exec start: %s\n", logCmd)
 

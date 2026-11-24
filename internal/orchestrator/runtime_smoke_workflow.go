@@ -84,16 +84,17 @@ func specHasRuntimeSmokeProbes(spec APISmokeSpec) bool {
 var uvicornServerRE = regexp.MustCompile(`(?i)\buvicorn\s+\S+:\S+`)
 var nodeDevServerRE = regexp.MustCompile(`(?i)\bnpx\s+(?:vite(?:\s|$)|next\s+(?:dev|start)(?:\s|$)|(?:http-server|serve)(?:\s|$))`)
 
-// isFlatGoServerCommand reports bare go run entrypoints for flat-layout Go servers
+// IsFlatGoServerCommand reports bare go run entrypoints for flat-layout Go servers
 // (go run . / go run ./ / go run main.go), where main.go sits at the layout root
 // instead of cmd/server/main.go. Mirrors gt-agent's isGoDevServerSmokeCommand.
-func isFlatGoServerCommand(cmd string) bool {
+func IsFlatGoServerCommand(cmd string) bool {
 	parts := strings.Fields(cmd)
 	for i, p := range parts {
-		if p != "go" || i+1 >= len(parts) || parts[i+1] != "run" || i+2 >= len(parts) {
+		token := strings.TrimLeft(p, "([{\"'`")
+		if token != "go" || i+1 >= len(parts) || strings.Trim(parts[i+1], `"'`) != "run" || i+2 >= len(parts) {
 			continue
 		}
-		target := parts[i+2]
+		target := strings.TrimRight(parts[i+2], ")]};\"'`")
 		switch target {
 		case ".", "./", "main.go", "./main.go":
 			return true
@@ -113,7 +114,7 @@ func IsDevServerSmokeCommand(cmd string) bool {
 	if strings.Contains(lower, "go run") && strings.Contains(lower, "cmd/server") {
 		return true
 	}
-	if isFlatGoServerCommand(cmd) {
+	if IsFlatGoServerCommand(cmd) {
 		return true
 	}
 	if strings.Contains(lower, "pytest") {
