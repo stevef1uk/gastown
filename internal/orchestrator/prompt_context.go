@@ -977,6 +977,81 @@ func FormatTestPlanReworkBlock(townRoot, rig string, v WorkflowValidation) strin
 	return b.String()
 }
 
+// FormatReviewRecoveryDossier assembles a complete diagnostic package for review_recovery
+// so the Mayor (or auto-triage) has all needed evidence without running manual shell commands.
+func FormatReviewRecoveryDossier(townRoot, rig string, v WorkflowValidation, rework *WorkflowRework) string {
+	if rework == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Review Recovery Triage Dossier\n\n")
+	b.WriteString(fmt.Sprintf("- Prior review state: **%s**\n", rework.FromState))
+	b.WriteString(fmt.Sprintf("- Review outcome: **%s**\n", rework.Outcome))
+	if rework.Summary != "" {
+		b.WriteString(fmt.Sprintf("- Review findings summary:\n> %s\n\n", strings.ReplaceAll(strings.TrimSpace(rework.Summary), "\n", "\n> ")))
+	}
+	if rework.Feedback != "" {
+		b.WriteString("### Prior Review Feedback Details\n")
+		b.WriteString(truncateWorkflowText(rework.Feedback, 2048))
+		b.WriteString("\n\n")
+	}
+
+	scoped := v.ForActivePhase()
+	b.WriteString(fmt.Sprintf("### Active Delivery Phase: `%s`\n", scoped.ActivePhaseID()))
+	if len(scoped.RequiredFiles) > 0 {
+		b.WriteString(fmt.Sprintf("- Required files in phase: `%s`\n", strings.Join(scoped.RequiredFiles, "`, `")))
+	}
+	if scoped.QAVerifyCommand != "" {
+		b.WriteString(fmt.Sprintf("- Phase verification command: `%s`\n", scoped.QAVerifyCommand))
+	}
+	b.WriteString("\n")
+
+	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
+	if rework.FromState == "test_review" {
+		testPlanPath := filepath.Join(rigDir, "TEST_PLAN.md")
+		if data, err := os.ReadFile(testPlanPath); err == nil {
+			content := string(data)
+			phase := scoped.ActivePhaseID()
+			var matchingLines []string
+			for _, line := range strings.Split(content, "\n") {
+				if strings.Contains(line, phase) || (strings.Contains(line, "|") && len(matchingLines) > 0 && len(matchingLines) < 15) {
+					matchingLines = append(matchingLines, line)
+				}
+			}
+			if len(matchingLines) > 0 {
+				b.WriteString("### Authoritative TEST_PLAN.md excerpt for active phase:\n```markdown\n")
+				b.WriteString(strings.Join(matchingLines, "\n"))
+				b.WriteString("\n```\n\n")
+			}
+		}
+
+		// Look for cited test files in summary or testRepairFiles
+		for path := range rework.TestRepairFiles {
+			fullPath := filepath.Join(rigDir, path)
+			if data, err := os.ReadFile(fullPath); err == nil {
+				lines := strings.Split(string(data), "\n")
+				if len(lines) > 200 {
+					lines = lines[:200]
+				}
+				b.WriteString(fmt.Sprintf("### Current contents of rejected file `%s`:\n```go\n", path))
+				b.WriteString(strings.Join(lines, "\n"))
+				b.WriteString("\n```\n\n")
+			}
+		}
+	}
+
+	b.WriteString("### Instructions for Mayor\n")
+	b.WriteString("All necessary evidence and artifacts are pre-assembled above. Select the responsible rework owner from the allowed outcomes:\n")
+	b.WriteString("- `implementation_rework`: code or test implementation defect with an existing owner (Polecat)\n")
+	b.WriteString("- `tester_rework`: TEST_PLAN.md requirements or bead mapping are wrong (Tester)\n")
+	b.WriteString("- `planner_rework`: plan.md, beads, or phase scope drifted from contract (Planner)\n")
+	b.WriteString("- `architect_rework`: SPEC/architecture contract contradiction (Architect)\n")
+	b.WriteString("- `pause`: ONLY if there is an unresolvable contradiction between external requirements requiring human decision.\n")
+	b.WriteString("Do NOT pause due to command execution or inspection difficulties.\n")
+
+	return b.String()
+}
+
 func joinStrings(ss []string, sep string) string {
 	if len(ss) == 0 {
 		return ""

@@ -36,13 +36,14 @@ correction. If the planner created a plan for a different project, identify the
 conflicting names/requirements from SPEC and `plan.md`, then choose
 `planner_rework` with an explicit instruction to replace the stale plan content.
 
-Use one command per `CMD:` line. For artifact inspection, work from town root:
+Use one command per `CMD:` line. For artifact inspection, work from town root (all code and artifacts live under `{{rig}}/mayor/rig/`):
 
 ```
 CMD: cat {{rig}}/mayor/rig/SPEC.md
 CMD: cat {{rig}}/mayor/rig/architecture.md
 CMD: cat {{rig}}/mayor/rig/plan.md
 CMD: cat {{rig}}/mayor/rig/.gastown/workflow-profile.json
+CMD: cat {{rig}}/mayor/rig/<relative/path/to/rejected_test.go>
 ```
 
 After inspecting evidence, report exactly one JSON outcome and no `CMD:` lines:

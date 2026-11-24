@@ -475,7 +475,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			feedback := feedbackBuilder.String()
 			if o, s, ok := parseOrchestratedResult(response, task.AllowedOutcomes); ok {
 				o = normalizeOrchestratedOutcome(o, task.AllowedOutcomes)
-				if msg, reject := runner.rejectImplementationNoOpFailure(o); reject {
+				if msg, reject := runner.rejectReviewRecoverySpuriousPause(o, s); reject {
+					orchestratedPrintf("[gt-agent] rejecting spurious review_recovery pause JSON\n")
+					feedbackBuilder.WriteString("\n\n" + msg)
+					feedback = feedbackBuilder.String()
+					recordAttemptFeedback(msg + "\n")
+				} else if msg, reject := runner.rejectImplementationNoOpFailure(o); reject {
 					orchestratedPrintf("[gt-agent] rejecting implementation failure JSON without fix work this attempt\n")
 					feedbackBuilder.WriteString("\n\n" + msg)
 					feedback = feedbackBuilder.String()
@@ -586,6 +591,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			}
 			if msg, reject := runner.rejectPlanReviewSpuriousFailure(o, s); reject {
 				orchestratedPrintf("[gt-agent] rejecting spurious plan_review failure JSON\n")
+				recordAttemptFeedback(msg + "\n")
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
+				continue
+			}
+			if msg, reject := runner.rejectReviewRecoverySpuriousPause(o, s); reject {
+				orchestratedPrintf("[gt-agent] rejecting spurious review_recovery pause JSON\n")
 				recordAttemptFeedback(msg + "\n")
 				messages = append(messages, llm.Message{Role: "user", Content: msg})
 				continue
@@ -717,6 +728,12 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				summary += "; " + logLine
 			}
 			return "timeout", summary, lastAttemptFeedback.String(), fmt.Errorf("no structured outcome after %d turns", maxTurns)
+		}
+	}
+	if task != nil && task.State == "review_recovery" && runner.task != nil && runner.task.PendingRework != nil {
+		if o, s, auto := runner.tryAutoReviewRecovery(); auto {
+			orchestratedPrintf("[gt-agent] turn exhaustion fallback for review_recovery: %s\n", o)
+			return o, s, lastAttemptFeedback.String(), nil
 		}
 	}
 	if task != nil && (task.State == "qa_review" || runner.hooks.VerificationErrorLimit > 0) {
@@ -1753,7 +1770,21 @@ func cdPrefixMayorRig(cmd, rig string) (string, bool) {
 	if commandHasRigPathContext(cmd, rig) {
 		return cmd, false
 	}
-	return "cd " + rig + "/mayor/rig && " + cmd, true
+	// When prepending cd <rig>/mayor/rig &&, strip redundant <rig>/ or ../../
+	// from relative arguments in the command, because cwd is now <rig>/mayor/rig.
+	normalized := cmd
+	rigPrefix := rig + "/"
+	if strings.Contains(normalized, rigPrefix) && !strings.Contains(normalized, rig+"/mayor/rig") {
+		normalized = strings.ReplaceAll(normalized, rigPrefix, "")
+	}
+	rigSpace := " " + rig + " "
+	if strings.Contains(normalized, rigSpace) {
+		normalized = strings.ReplaceAll(normalized, rigSpace, " . ")
+	}
+	if strings.Contains(normalized, "../../") {
+		normalized = strings.ReplaceAll(normalized, "../../", "")
+	}
+	return "cd " + rig + "/mayor/rig && " + normalized, true
 }
 
 // rewritePlanMDPathAfterCD fixes a common planner mistake: after `cd rig/mayor/rig`,

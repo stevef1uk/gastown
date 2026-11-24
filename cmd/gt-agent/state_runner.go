@@ -158,7 +158,13 @@ func (r *stateRunner) runPreRun() error {
 }
 
 func (r *stateRunner) promptContextBlocks() []string {
-	return orchestrator.PromptContextBlocks(r.hooks.PromptContext, r.townRoot, r.rig, r.v)
+	blocks := orchestrator.PromptContextBlocks(r.hooks.PromptContext, r.townRoot, r.rig, r.v)
+	if r.task != nil && r.task.State == "review_recovery" && r.task.PendingRework != nil {
+		if dossier := orchestrator.FormatReviewRecoveryDossier(r.townRoot, r.rig, r.v, r.task.PendingRework); dossier != "" {
+			blocks = append(blocks, dossier)
+		}
+	}
+	return blocks
 }
 
 func (r *stateRunner) failurePromptContextBlocks() []string {
@@ -1118,6 +1124,11 @@ func (r *stateRunner) tryAutoOutcome() (outcome, summary string, ok bool) {
 	if r.hooks.RequireExplicitOutcome {
 		return "", "", false
 	}
+	if r.task != nil && r.task.State == "review_recovery" {
+		if o, s, auto := r.tryAutoReviewRecovery(); auto {
+			return o, s, true
+		}
+	}
 	fn, ok := artifactAutoCompleters[r.hooks.Artifacts]
 	if !ok {
 		return "", "", false
@@ -1131,6 +1142,46 @@ func (r *stateRunner) tryAutoOutcome() (outcome, summary string, ok bool) {
 	}
 	orchestratedPrintf("[gt-agent] auto-completing %s: artifacts satisfied\n", r.hooks.Artifacts)
 	return o, "artifacts validated", true
+}
+
+func (r *stateRunner) tryAutoReviewRecovery() (outcome, summary string, ok bool) {
+	if r == nil || r.task == nil || r.task.State != "review_recovery" || r.task.PendingRework == nil {
+		return "", "", false
+	}
+	pr := r.task.PendingRework
+	lowerSummary := strings.ToLower(pr.Summary)
+
+	switch pr.FromState {
+	case "test_review":
+		if strings.Contains(lowerSummary, "plan_gap") || strings.Contains(lowerSummary, "test_plan") {
+			orchestratedPrintf("[gt-agent] auto-routing review_recovery from test_review to tester_rework\n")
+			return "tester_rework", "Auto-routed to Tester for TEST_PLAN rework: " + pr.Summary, true
+		}
+		if strings.Contains(lowerSummary, "spec contradiction") || strings.Contains(lowerSummary, "architecture") {
+			orchestratedPrintf("[gt-agent] auto-routing review_recovery from test_review to architect_rework\n")
+			return "architect_rework", "Auto-routed to Architect for contract resolution: " + pr.Summary, true
+		}
+		orchestratedPrintf("[gt-agent] auto-routing review_recovery from test_review to implementation_rework\n")
+		return "implementation_rework", "Auto-routed to Polecat for test repair: " + pr.Summary, true
+
+	case "plan_review":
+		if strings.Contains(lowerSummary, "architecture") || strings.Contains(lowerSummary, "spec") {
+			orchestratedPrintf("[gt-agent] auto-routing review_recovery from plan_review to architect_rework\n")
+			return "architect_rework", "Auto-routed to Architect for plan/architecture alignment: " + pr.Summary, true
+		}
+		orchestratedPrintf("[gt-agent] auto-routing review_recovery from plan_review to planner_rework\n")
+		return "planner_rework", "Auto-routed to Planner: " + pr.Summary, true
+
+	case "qa_review":
+		if strings.Contains(lowerSummary, "architecture") || strings.Contains(lowerSummary, "spec") {
+			orchestratedPrintf("[gt-agent] auto-routing review_recovery from qa_review to architect_rework\n")
+			return "architect_rework", "Auto-routed to Architect: " + pr.Summary, true
+		}
+		orchestratedPrintf("[gt-agent] auto-routing review_recovery from qa_review to implementation_rework\n")
+		return "implementation_rework", "Auto-routed to Polecat for QA defect repair: " + pr.Summary, true
+	}
+
+	return "", "", false
 }
 
 func (r *stateRunner) retryHint() string {

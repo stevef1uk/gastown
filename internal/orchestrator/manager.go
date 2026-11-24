@@ -899,30 +899,35 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		} else if fromState == "test_plan" {
 			inst.TestPlanFailures = 0
 		}
-		if fromState == "qa_review" && next == "implementation" && rig != "" && phaseAdvance == nil {
-			if rewindLog, rerr := RewindToEarlierPhaseForQAFailure(m.townRoot, rig, v, summary); rerr != nil {
-				inst.CurrentState = fromState
-				inst.Status = "running"
-				inst.touchStateEnteredAt()
-				return "", fmt.Errorf("rewind to QA repair phase: %w", rerr)
-			} else if rewindLog != "" {
-				fmt.Printf("[Manager] QA repair phase rewind: %s\n", rewindLog)
-				reloaded, ok, rerr := LoadRigWorkflowProfileFile(m.townRoot, rig)
-				if rerr != nil || !ok {
+		if (fromState == "qa_review" || fromState == "test_review" || fromState == "review_recovery") && next == "implementation" && rig != "" && phaseAdvance == nil {
+			if fromState == "qa_review" {
+				if rewindLog, rerr := RewindToEarlierPhaseForQAFailure(m.townRoot, rig, v, summary); rerr != nil {
 					inst.CurrentState = fromState
 					inst.Status = "running"
 					inst.touchStateEnteredAt()
-					if rerr == nil {
-						rerr = fmt.Errorf("workflow profile not found")
+					return "", fmt.Errorf("rewind to QA repair phase: %w", rerr)
+				} else if rewindLog != "" {
+					fmt.Printf("[Manager] QA repair phase rewind: %s\n", rewindLog)
+					reloaded, ok, rerr := LoadRigWorkflowProfileFile(m.townRoot, rig)
+					if rerr != nil || !ok {
+						inst.CurrentState = fromState
+						inst.Status = "running"
+						inst.touchStateEnteredAt()
+						if rerr == nil {
+							rerr = fmt.Errorf("workflow profile not found")
+						}
+						return "", fmt.Errorf("reload workflow profile after QA repair rewind: %w", rerr)
 					}
-					return "", fmt.Errorf("reload workflow profile after QA repair rewind: %w", rerr)
+					v = reloaded
+					reworkFeedback = strings.TrimSpace(reworkFeedback + "\n\n" + rewindLog)
 				}
-				v = reloaded
-				reworkFeedback = strings.TrimSpace(reworkFeedback + "\n\n" + rewindLog)
 			}
 			reopenText := summary // Raw command output can list every closed bead; it is not a repair instruction.
+			if inst.PendingRework != nil && inst.PendingRework.Summary != "" {
+				reopenText = reopenText + "\n" + inst.PendingRework.Summary
+			}
 			if reopened, rerr := ReopenImplementationBeadsAfterQAFailure(m.townRoot, rig, v, reopenText); rerr != nil {
-				fmt.Printf("[Manager] Warning: reopen implement beads after QA failure: %v\n", rerr)
+				fmt.Printf("[Manager] Warning: reopen implement beads after %s failure: %v\n", fromState, rerr)
 			} else if len(reopened) > 0 {
 				reworkFeedback = strings.TrimSpace(reworkFeedback + "\n\nAuto-reopened closed implement beads: " + strings.Join(reopened, ", "))
 			}
@@ -962,15 +967,25 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 				inst.DeferredTestReviews[phase] = deferred
 			}
 		}
+		originFromState := fromState
+		originTestRepairFiles := testRepairFiles
+		if recoveryHandoff && inst.PendingRework != nil {
+			if inst.PendingRework.FromState != "" {
+				originFromState = inst.PendingRework.FromState
+			}
+			if len(originTestRepairFiles) == 0 && len(inst.PendingRework.TestRepairFiles) > 0 {
+				originTestRepairFiles = inst.PendingRework.TestRepairFiles
+			}
+		}
 		inst.PendingRework = &WorkflowRework{
-			FromState:       fromState,
+			FromState:       originFromState,
 			Outcome:         outcome,
 			Summary:         truncateWorkflowText(summary, maxWorkflowReworkSummary),
 			Feedback:        reworkFeedback,
 			AgentID:         agentID,
-			TestRepairFiles: testRepairFiles,
+			TestRepairFiles: originTestRepairFiles,
 		}
-		if fromState == "test_review" && next == "implementation" && len(testRepairFiles) > 0 {
+		if (fromState == "test_review" || (recoveryHandoff && originFromState == "test_review")) && next == "implementation" && len(originTestRepairFiles) > 0 {
 			inst.ActiveTestRepair = inst.PendingRework
 		}
 		if IsTimeoutOutcome(outcome) && next == fromState && previousTestRepair != nil {
