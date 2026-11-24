@@ -389,3 +389,32 @@ func TestCompleteTask_implementationFailureNoGapRoutesToPlanning(t *testing.T) {
 	}
 	assertActivePhase(t, townRoot, rig, "frontend")
 }
+
+// TestCompleteTask_implementationFailureEarlierPhaseGoTestFailureRewinds verifies that when polecat
+// reports verification failures citing files from an earlier completed phase, CompleteTask automatically
+// rewinds active_phase_id to the earlier phase and routes back to implementation.
+func TestCompleteTask_implementationFailureEarlierPhaseGoTestFailureRewinds(t *testing.T) {
+	townRoot, rig, rigDir, beadsDir := setupPhasedRigTown(t)
+	writeTestPhasedProfile3(t, townRoot, rig, "frontend")
+	advancePhasesUpTo(t, townRoot, rig, rigDir, beadsDir, "frontend")
+
+	m, id := newImplementationRewindManager(t, townRoot, rig)
+	summary := "Cannot close fe-1: verify red because of failures in linkshelf/internal/store/store.go. Reopen store.go bead."
+	feedback := "linkshelf/internal/store/store_test.go:42: failed test"
+	next, err := m.CompleteTask(id, "failure", rig+"/polecat", summary, feedback, nil)
+	if err != nil {
+		t.Fatalf("CompleteTask: %v", err)
+	}
+	if next != "implementation" {
+		t.Fatalf("next = %q, want implementation (polecat) after test failure rewind", next)
+	}
+	assertActivePhase(t, townRoot, rig, "backend")
+
+	reloaded, ok, err := LoadRigWorkflowProfileFile(townRoot, rig)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	if got := reloaded.RewoundFromPhaseIDField; got != "frontend" {
+		t.Fatalf("rewound_from_phase_id = %q, want frontend", got)
+	}
+}

@@ -577,7 +577,8 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	implementationRewound := false
 	if fromState == "implementation" && next == "planning" && outcome != "plan_dependency_blocked" && rig != "" {
 		v := m.workflowValidationFor(inst, tpl)
-		if repairLog, rerr := MaybeRewindToProblemPhaseForImplementation(m.townRoot, rig, v, feedback); rerr != nil && repairLog != "" {
+		combinedFeedback := strings.TrimSpace(summary + "\n" + feedback)
+		if repairLog, rerr := MaybeRewindToProblemPhaseForImplementation(m.townRoot, rig, v, combinedFeedback); rerr != nil && repairLog != "" {
 			log.Printf("[Manager] implementation failure recovery for %s (phase %s; returning to implementation): %s", rig, v.ActivePhaseID(), repairLog)
 			next = "implementation"
 			inst.CurrentState = next
