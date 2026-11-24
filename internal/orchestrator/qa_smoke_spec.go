@@ -79,7 +79,7 @@ func parseAPISmokeSpecText(text string, v WorkflowValidation) APISmokeSpec {
 			// Only use backticks for GET probes (supplementary docs).
 			// POST/PUT/DELETE/PATCH in backticks are often curl examples showing error cases.
 			if method == "GET" {
-				record(method, "/"+strings.Trim(m[2], "/"), text)
+				record(method, "/"+strings.Trim(m[2], "/"), "")
 			}
 		}
 	}
