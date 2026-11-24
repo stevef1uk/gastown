@@ -46,6 +46,23 @@ func TestPlanMeetsMinSize(rigDir string, v WorkflowValidation) bool {
 	return info.Size() >= EffectiveMinTestPlanBytes(v)
 }
 
+var automatedTestRunnerRE = regexp.MustCompile(`(^|[\s;&|])(go\s+test\b|pytest\b|python[0-9.]*\s+-m\s+(?:pytest|unittest)\b|(?:npm|yarn|pnpm|npx)\s+(?:test|playwright|jest|vitest|cypress)\b|(?:docker|podman)\s+compose\b|docker-compose\b|playwright\s+test\b|cypress\s+run\b)`)
+
+func hasAnyAutomatedTestRunner(cmd string) bool {
+	return automatedTestRunnerRE.MatchString(strings.ToLower(cmd))
+}
+
+func isSourceWithCompanionTest(f string) bool {
+	lower := strings.ToLower(f)
+	if strings.HasSuffix(lower, ".go") && !strings.HasSuffix(lower, "_test.go") {
+		return true
+	}
+	if strings.HasSuffix(lower, ".py") && !strings.HasPrefix(filepath.Base(lower), "test_") && !strings.HasSuffix(lower, "_test.py") {
+		return true
+	}
+	return false
+}
+
 // PhaseShipsAutomatedTests reports whether a delivery phase runs automated tests.
 // A setup-only phase (manifest/config files such as requirements.txt, go.mod,
 // package.json; verify command that explicitly says there are no automated tests)
@@ -79,13 +96,13 @@ func PhaseShipsAutomatedTests(p DeliveryPhase) bool {
 		return false // "verify ok (no automated tests for this phase)" style stub
 	}
 
-	// File-existence only or shell-check only verification that invokes no language
-	// stack tool and no container test runner. When the phase also declares no test
-	// files, it is an asset/file delivery phase that ships no automated tests.
-	if !hasAnyStackTool(cmd) && !qaVerifyCommandReferencesDocker(cmd) {
+	// When verification does not invoke an automated test runner (e.g. file checks,
+	// go build/vet, compileall) and the phase has no test files or companion-test sources,
+	// it is a non-test-carrying delivery phase.
+	if !hasAnyAutomatedTestRunner(cmd) {
 		hasTest := false
 		for _, f := range p.RequiredFiles {
-			if IsTestImplementPath(f) {
+			if IsTestImplementPath(f) || isSourceWithCompanionTest(f) {
 				hasTest = true
 				break
 			}
@@ -683,6 +700,14 @@ func ValidateTestPlanPaths(v WorkflowValidation, blocks []TestPlanBlock) error {
 		ownedScope.RequiredFiles = files
 		ownedScope.DeliveryPhases = nil
 		matched = matched || SourcePathForOwnedTest(testFile, ownedScope) != ""
+		if !matched && (strings.EqualFold(b.Level, "ui") || strings.EqualFold(b.Level, "integration") || strings.EqualFold(b.Level, "e2e")) {
+			for _, file := range v.UnionRequiredFiles() {
+				if testFile == filepath.ToSlash(strings.TrimSpace(file)) {
+					matched = true
+					break
+				}
+			}
+		}
 		if !matched {
 			return fmt.Errorf("TEST_PLAN.md test file %q must be a required test or a conventional companion of a required source file for phase %q; use architecture_failure if the delivery contract has no suitable test path", testFile, b.Phase)
 		}
