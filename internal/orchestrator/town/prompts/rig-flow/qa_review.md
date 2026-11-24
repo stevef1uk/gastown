@@ -35,7 +35,7 @@ Report every distinct defect from both stages, grouped by stage in the summary a
 Security validation: gt-agent deterministically scans for embedded secrets/credentials before approving `all_passed`/`task_passed`. If findings exist and are not `allow-secret: <reason>`-marked, the outcome will be rejected — use `failure` and resolve or add the escape hatch. Read `{{town_root}}/orchestrator/SECURITY_STANDARDS.md` for full standards and scanned patterns.
 
 **Turn 1:** Run `bd list --status=closed --limit=0` AND `cd {{rig}}/mayor/rig && {{qa_verify_command}}` (both CMD lines in one message).
-**Turn 2:** JSON outcome only (no CMD lines). If you skip the verify command, you will be rejected and waste turns.
+**Turn 2:** If the verify command and inspections passed, send JSON outcome `{"outcome":"all_passed",...}` directly. Do NOT attempt to run background servers (`go run`, `python -m`, etc.) with manual `kill` or `pkill` in turn 2 — that causes hangs or rejected commands. The verify command (`{{qa_verify_command}}`) is the authoritative gate for this phase. If you skip the verify command, you will be rejected and waste turns.
 
 **Path warning:** Required files exist under `{{layout_root}}/`. If a `cd` command fails, the path is wrong — try the relative subdirectory without the rig name prefix (e.g., use `cd frontend` not `cd finally/frontend`). Do NOT report failure for a `cd` error when required files are present on disk.
 
