@@ -878,6 +878,16 @@ CMD: go test ./...
 	if strings.TrimSpace(got) != "" {
 		t.Fatalf("self-closing tag should be stripped entirely, got:\n%s", got)
 	}
+
+	// Invoke tool tag stripped
+	in = "<invoke_tool>\nCMD: python3 -c \"import sys; print(1)\"\n</invoke_tool>"
+	got = stripFunctionalCommandsTags(in)
+	if strings.Contains(got, "<invoke_tool>") || strings.Contains(got, "</invoke_tool>") {
+		t.Fatalf("invoke_tool tags should be stripped, got:\n%s", got)
+	}
+	if !strings.Contains(got, "CMD: python3 -c \"import sys; print(1)\"") {
+		t.Fatalf("want CMD preserved, got:\n%s", got)
+	}
 }
 
 func TestIsOrchestratedShellNoiseLine_endCmd(t *testing.T) {

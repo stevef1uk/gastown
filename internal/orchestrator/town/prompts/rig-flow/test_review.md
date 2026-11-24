@@ -32,7 +32,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 1. `TEST_PLAN.md` exists and is ≥ {{min_test_plan_bytes}} bytes.
 2. **Only validate requirement rows where `Phase` matches the active phase or any completed phase** — future-phase requirements are expected to be missing until that delivery phase begins. Filter by phase IDs: `{{test_validation_phase_ids}}`.
-3. For each valid requirement row, the planned test file exists on disk. Paths are relative to `{{rig}}/mayor/rig` and may already include `{{layout_root}}/`; do not prepend that prefix twice.
+3. For each valid requirement row owned by the active or completed phases, the planned test file exists on disk. If a planned test file belongs to a future delivery phase (e.g. `test_main.py` in phase `test`), it is NOT required to exist during earlier phases (`core`). If the active phase's `required_files` contains no test files and the phase verify command (`{{phase_qa_verify_command}}`) is green, do not fail review for missing future-phase test files. Paths are relative to `{{rig}}/mayor/rig` and may already include `{{layout_root}}/`; do not prepend that prefix twice.
 4. Each test file has substantive content — no `TODO`, `FIXME`, empty bodies, or placeholder returns (gt-agent's stub check).
 5. Phase verify `{{phase_qa_verify_command}}` exits green.
 
@@ -40,7 +40,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 
 For each `### <req-id>` in `TEST_PLAN.md`:
 
-First restrict the review and report to phases `{{test_validation_phase_ids}}`. A rewind does not make future phases due: do not fail their missing tests or demand their verification commands. Mark out-of-scope rows deferred if you mention them.
+First restrict the review and report to phases `{{test_validation_phase_ids}}`. A rewind does not make future phases due: do not fail their missing tests or demand their verification commands. Mark out-of-scope rows deferred if you mention them. Never fail an implementation or return `failure` / `plan_gap` because a test file from a subsequent phase has not been created yet. If an earlier source-only phase (`core`) mentions a test file scheduled for a later phase (`test`), that test file is deferred until its owning phase.
 
 Read SPEC.md and architecture.md before judging adequacy. SPEC is the acceptance boundary: do not invent endpoints, configuration options, UI states, or additional coverage obligations. If TEST_PLAN.md adds unsupported behavior, maps a requirement to an unrelated test/source package, or lacks resolvable bead ownership for in-scope active or completed phases ({{test_validation_phase_ids}}), return `plan_gap` naming the exact correction. Earlier completed phases or future delivery phases may have closed, pending, or unassigned bead IDs — never return `plan_gap` or fail review because future-phase rows lack bead IDs. Do not instruct Polecat to implement a bad plan. If the SPEC and architecture themselves genuinely conflict, use `architecture_failure`.
 

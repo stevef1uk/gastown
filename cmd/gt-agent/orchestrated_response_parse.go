@@ -287,41 +287,56 @@ func unwrapAngleBracketCMD(response string) string {
 	return strings.Join(out, "\n")
 }
 
-// stripFunctionalCommandsTags removes <functional_commands> and </functional_commands>
+// stripFunctionalCommandsTags removes <functional_commands>, <invoke_tool>, and similar
 // XML tags that some LLMs emit around command blocks. These tags are not valid
 // CMD: markup and cause bash syntax errors when they leak into shell commands.
 func stripFunctionalCommandsTags(response string) string {
-	if !strings.Contains(response, "<functional_commands") {
+	lower := strings.ToLower(response)
+	if !strings.Contains(lower, "<functional_commands") &&
+		!strings.Contains(lower, "<invoke_tool") &&
+		!strings.Contains(lower, "</invoke_tool") &&
+		!strings.Contains(lower, "<tool_call") &&
+		!strings.Contains(lower, "</tool_call") {
 		return response
 	}
 	var out []string
 	for _, line := range strings.Split(response, "\n") {
 		trimmed := strings.TrimSpace(line)
 		upper := strings.ToUpper(trimmed)
-		// Strip any line that is just a functional_commands tag (open, close, or self-closing)
+		// Strip any line that is just an XML tool tag (open, close, or self-closing)
 		if upper == "<FUNCTIONAL_COMMANDS>" || upper == "</FUNCTIONAL_COMMANDS>" ||
-			upper == "<FUNCTIONAL_COMMANDS />" || strings.HasPrefix(upper, "<FUNCTIONAL_COMMANDS") && strings.HasSuffix(upper, "/>") {
+			upper == "<FUNCTIONAL_COMMANDS />" || upper == "<FUNCTIONAL_COMMANDS/>" ||
+			upper == "<INVOKE_TOOL>" || upper == "</INVOKE_TOOL>" ||
+			upper == "<INVOKE_TOOL />" || upper == "<INVOKE_TOOL/>" ||
+			upper == "<TOOL_CALL>" || upper == "</TOOL_CALL>" ||
+			upper == "<TOOL_CALL />" || upper == "<TOOL_CALL/>" ||
+			(strings.HasPrefix(upper, "<FUNCTIONAL_COMMANDS") && strings.HasSuffix(upper, "/>")) {
 			continue
 		}
 		// Handle inline tags: strip the tags, keep the content
-		if strings.Contains(line, "<functional_commands") {
-			cleaned := line
-			// Remove all variations of the tags
-			for _, tag := range []string{
-				"<functional_commands>", "</functional_commands>",
-				"<functional_commands />", "<functional_commands/>",
-				"<FUNCTIONAL_COMMANDS>", "</FUNCTIONAL_COMMANDS>",
-				"<FUNCTIONAL_COMMANDS />", "<FUNCTIONAL_COMMANDS/>",
-			} {
-				cleaned = strings.ReplaceAll(cleaned, tag, "")
-			}
-			cleaned = strings.TrimSpace(cleaned)
-			if cleaned != "" {
-				out = append(out, cleaned)
-			}
-			continue
+		cleaned := line
+		for _, tag := range []string{
+			"<functional_commands>", "</functional_commands>",
+			"<functional_commands />", "<functional_commands/>",
+			"<FUNCTIONAL_COMMANDS>", "</FUNCTIONAL_COMMANDS>",
+			"<FUNCTIONAL_COMMANDS />", "<FUNCTIONAL_COMMANDS/>",
+			"<invoke_tool>", "</invoke_tool>",
+			"<invoke_tool />", "<invoke_tool/>",
+			"<INVOKE_TOOL>", "</INVOKE_TOOL>",
+			"<INVOKE_TOOL />", "<INVOKE_TOOL/>",
+			"<tool_call>", "</tool_call>",
+			"<tool_call />", "<tool_call/>",
+			"<TOOL_CALL>", "</TOOL_CALL>",
+			"<TOOL_CALL />", "<TOOL_CALL/>",
+		} {
+			cleaned = strings.ReplaceAll(cleaned, tag, "")
 		}
-		out = append(out, line)
+		cleaned = strings.TrimSpace(cleaned)
+		if cleaned != "" {
+			out = append(out, cleaned)
+		} else if strings.TrimSpace(line) == "" {
+			out = append(out, "")
+		}
 	}
 	return strings.Join(out, "\n")
 }

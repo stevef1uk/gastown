@@ -1146,8 +1146,8 @@ func parseLLMResponse(response string) (cmds []string, doneSummary string, hallu
 			continue
 		}
 
-		if isMarkdownStructure(trimmed) {
-			// Markdown also terminates — but only if quotes are balanced.
+		if isMarkdownStructure(trimmed) || isXMLToolTag(trimmed) {
+			// Markdown and tool tags also terminate — but only if quotes are balanced.
 			// Inside an open `sh -c '...'` body, a `# comment` line is
 			// just a shell comment, not a markdown heading.
 			if hasOpenShellQuote(scriptBuf) {
@@ -1336,6 +1336,18 @@ func isMarkdownStructure(trimmed string) bool {
 		return true
 	}
 	if strings.HasPrefix(trimmed, "|") {
+		return true
+	}
+	return false
+}
+
+func isXMLToolTag(trimmed string) bool {
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "</invoke_tool") || strings.HasPrefix(lower, "<invoke_tool") ||
+		strings.HasPrefix(lower, "</tool_call") || strings.HasPrefix(lower, "<tool_call") ||
+		strings.HasPrefix(lower, "</tools") || strings.HasPrefix(lower, "<tools") ||
+		strings.HasPrefix(lower, "</functional_commands") || strings.HasPrefix(lower, "<functional_commands") ||
+		strings.HasPrefix(lower, "</function_calls") || strings.HasPrefix(lower, "<function_calls") {
 		return true
 	}
 	return false
