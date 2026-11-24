@@ -243,6 +243,7 @@ func declaredArchitecturePaths(text, layout string) []string {
 // Works with or without code fences (```) for backward compatibility.
 func parseSpecLayoutTree(specText string) []string {
 	section := specLayoutSection(specText)
+	indentUnit := detectTreeIndentUnit(section)
 	dirs := []string{}
 	var out []string
 	inCodeFence := false
@@ -259,7 +260,7 @@ func parseSpecLayoutTree(specText string) []string {
 		if hasCodeFence && !inCodeFence {
 			continue
 		}
-		depth, entry := treeLineDepthEntry(line)
+		depth, entry := treeLineDepthEntryWithUnit(line, indentUnit)
 		entry = strings.Trim(entry, "`")
 		entry = stripTreeComment(entry)
 		if entry == "" {
@@ -324,6 +325,7 @@ func parseSpecLayoutTree(specText string) []string {
 // canonical directory structure that architecture.md should follow.
 func extractSpecDirPrefixes(specText string) map[string]bool {
 	section := specLayoutSection(specText)
+	indentUnit := detectTreeIndentUnit(section)
 	dirs := []string{}
 	prefixes := map[string]bool{}
 	inCodeFence := false
@@ -337,7 +339,7 @@ func extractSpecDirPrefixes(specText string) map[string]bool {
 		if hasCodeFence && !inCodeFence {
 			continue
 		}
-		depth, entry := treeLineDepthEntry(line)
+		depth, entry := treeLineDepthEntryWithUnit(line, indentUnit)
 		entry = strings.Trim(entry, "`")
 		entry = stripTreeComment(entry)
 		if entry == "" {
@@ -398,11 +400,32 @@ func looksLikeFileName(name string) bool {
 	return extensionlessManifestRE.MatchString(name)
 }
 
-// treeLineDepthEntry reports the nesting depth and entry text of a markdown tree
-// line.  The depth is determined by the column position of the first `├` or `└`
-// connector character (each tree level is 4 chars wide).  Returns depth 0 and
-// the trimmed entry for bare lines (e.g. the root directory or continuation bars).
+// detectTreeIndentUnit detects indentation width (e.g. 2 or 4 spaces) for space-indented trees.
+func detectTreeIndentUnit(section string) int {
+	minIndent := 0
+	for _, l := range strings.Split(section, "\n") {
+		trimmed := strings.TrimLeft(l, " \t")
+		if trimmed == "" || strings.HasPrefix(trimmed, "```") {
+			continue
+		}
+		indent := len(l) - len(trimmed)
+		if indent > 0 {
+			if minIndent == 0 || indent < minIndent {
+				minIndent = indent
+			}
+		}
+	}
+	if minIndent <= 0 {
+		return 2
+	}
+	return minIndent
+}
+
 func treeLineDepthEntry(line string) (int, string) {
+	return treeLineDepthEntryWithUnit(line, 2)
+}
+
+func treeLineDepthEntryWithUnit(line string, indentUnit int) (int, string) {
 	// Find the column position of the tree connector (├ or └) using rune counting.
 	connIdx := -1
 	runes := []rune(line)
@@ -414,7 +437,18 @@ func treeLineDepthEntry(line string) (int, string) {
 	}
 
 	if connIdx < 0 {
-		// No connector — root directory, continuation bar, or prose line.
+		trimmed := strings.TrimLeft(line, " \t")
+		if trimmed == "" {
+			return 0, ""
+		}
+		indent := len(line) - len(trimmed)
+		if indent > 0 {
+			if indentUnit <= 0 {
+				indentUnit = 2
+			}
+			depth := indent / indentUnit
+			return depth, strings.TrimSpace(trimmed)
+		}
 		return 0, strings.TrimSpace(line)
 	}
 

@@ -405,3 +405,48 @@ func TestParseArchPhasesUsesStructuredContract(t *testing.T) {
 		t.Fatalf("contract was changed by prose parsing: %+v", phases)
 	}
 }
+
+func TestParseSpecLayoutTree_spaceIndented(t *testing.T) {
+	spec := `## 3. Canonical project layout
+
+` + "```text" + `
+SPEC.md
+taskboard/
+  go.mod
+  cmd/
+    taskboard/
+      main.go
+  web/
+    static/
+      app.js
+      style.css
+  deploy/
+    k8s/
+      deployment.yaml
+      service.yaml
+  package.json
+` + "```" + `
+`
+	got := parseSpecLayoutTree(spec)
+	want := map[string]bool{
+		"taskboard/go.mod":                    true,
+		"taskboard/cmd/taskboard/main.go":     true,
+		"taskboard/web/static/app.js":         true,
+		"taskboard/web/static/style.css":      true,
+		"taskboard/deploy/k8s/deployment.yaml": true,
+		"taskboard/deploy/k8s/service.yaml":   true,
+		"taskboard/package.json":              true,
+	}
+	for w := range want {
+		found := false
+		for _, g := range got {
+			if g == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing %q in %v", w, got)
+		}
+	}
+}

@@ -58,7 +58,7 @@ states:
     hooks:
       prompt_context: [design_draft_context, spec_runtime_commands]
       pre_run: [prune_rig_root_junk]
-      max_cmd_turns: 8
+      max_cmd_turns: 15
       cmd_guard: design
       cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, arch_md_after_cd, unwrap_bash_lc]
       track: design
@@ -163,7 +163,7 @@ states:
       review_failure_limit: 3
       review_recovery_state: review_recovery
       pre_run: [sync_planning_artifacts, enforce_implement_bead_queue]
-      max_cmd_turns: 8
+      max_cmd_turns: 15
       cmd_guard: plan_review
       cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, bd_list_limit, unwrap_bash_lc]
       env:
@@ -253,7 +253,7 @@ states:
       3. Confirm test levels match the plan and active-phase Bead IDs exist in `bd list --status=open,in_progress` (completed/future phases may have blank or closed Bead IDs).
       4. Report success only when the test plan is complete and SPEC-aligned; failure sends the tester back to rewrite TEST_PLAN.md.
     hooks:
-      max_cmd_turns: 8
+      max_cmd_turns: 15
       cmd_guard: design_review
       cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, test_plan_md_after_cd, bd_list_limit, unwrap_bash_lc]
       env:
@@ -520,7 +520,7 @@ states:
       state_timeout_seconds: 1800
       cmd_timeout_seconds: 900
       append_go_compile_context: true
-      max_cmd_turns: 8
+      max_cmd_turns: 15
       pre_run: [ensure_dolt_auto_commit, ensure_dolt_schema_health, reconcile_implement_beads]
       per_turn: [repair_requirements]
       cmd_guard: qa
