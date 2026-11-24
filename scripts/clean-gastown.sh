@@ -1346,7 +1346,10 @@ fi
 if [[ ${#STRAY_BEADS[@]} -gt 0 ]]; then
     log_info "Cleaning up stray beads directories..."
     for d in ${STRAY_BEADS[@]+"${STRAY_BEADS[@]}"}; do
-        rm -rf "$d"
+        for attempt in 1 2 3; do
+            rm -rf "$d" 2>/dev/null && break || sleep 1
+        done
+        [[ ! -d "$d" ]] || rm -rf "$d"
         log_ok "Deleted ${d}"
     done
 fi
