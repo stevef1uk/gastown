@@ -253,16 +253,21 @@ trap cleanup_compose EXIT
 # machine from the embedded Dockerfile.playwright template) — NOT a raw
 # mcr.microsoft.com/playwright tag, which gastown's compose validation flags.
 # Bind mounts only — no named volumes, nothing persists between runs.
-cat > docker-compose.yml <<'COMPOSEEOF'
+PLAYWRIGHT_BASE_URL="http://127.0.0.1:8080"
+if [ "${PLATFORM}" = "mac" ]; then
+    PLAYWRIGHT_BASE_URL="http://host.docker.internal:8080"
+fi
+
+cat > docker-compose.yml <<COMPOSEEOF
 services:
   playwright:
     image: playwright-go-test:latest
     user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     working_dir: /work
     volumes:
-      - ./pingapp:/work
+      - .:/work
     environment:
-      - BASE_URL=http://host.docker.internal:8080
+      - BASE_URL=${PLAYWRIGHT_BASE_URL}
     command: sh -c "npm install --ignore-scripts && npx playwright test"
     network_mode: "host"
     extra_hosts:
@@ -273,7 +278,7 @@ COMPOSEEOF
 SERVER_PID=""
 if ! curl -s http://127.0.0.1:8080/ping >/dev/null 2>&1; then
     echo "Starting host Go server on port 8080..."
-    (cd "${GT_ROOT}/pwtest/mayor/rig/pingapp" && (go run cmd/server/main.go 2>/dev/null || ./server 2>/dev/null) &)
+    (exec go run cmd/server/main.go 2>/dev/null || exec ./server 2>/dev/null) &
     SERVER_PID=$!
     for _ in $(seq 1 30); do
         curl -s http://127.0.0.1:8080/ping >/dev/null 2>&1 && break
@@ -283,7 +288,7 @@ fi
 
 ${DC} -f docker-compose.yml up --exit-code-from playwright 2>&1 | tail -20
 RC=${PIPESTATUS[0]}
-[ -n "${SERVER_PID}" ] && kill -9 "${SERVER_PID}" 2>/dev/null || true
+[ -n "${SERVER_PID:-}" ] && kill -9 "${SERVER_PID}" 2>/dev/null || true
 cleanup_compose
 
 if [ "$RC" -ne 0 ]; then
