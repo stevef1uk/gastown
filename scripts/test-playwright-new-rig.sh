@@ -173,7 +173,7 @@ print(candidates[0]["id"])
 echo "Following workflow ${WORKFLOW_ID}"
 
 echo "=== 4. Wait for workflow completion ==="
-MAX_WAIT=1800
+MAX_WAIT="${MAX_WAIT:-3600}"
 ELAPSED=0
 while [ ${ELAPSED} -lt ${MAX_WAIT} ]; do
     SNAPSHOT="$(gt mayor workflow status "${WORKFLOW_ID}" --json)"
