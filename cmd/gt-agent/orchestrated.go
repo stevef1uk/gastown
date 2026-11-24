@@ -281,7 +281,13 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		}
 	}
 	// Never auto-complete when there's pending rework — the agent must do the work.
-	if task.PendingRework != nil {
+	// Exception: review_recovery exists specifically to triage pending rework.
+	if task.State == "review_recovery" {
+		if o, s, ok := runner.tryAutoOutcome(); ok {
+			orchestratedPrintf("[gt-agent] auto-routing review_recovery: %s (%s)\n", o, s)
+			return o, s, "", nil
+		}
+	} else if task.PendingRework != nil {
 		orchestratedPrintf("[gt-agent] rework pending from %s — skipping auto-complete for %s\n", task.PendingRework.FromState, task.State)
 	} else if !shouldSkipPlanningAutoComplete(task, townRoot, rig, runner.v) &&
 		!shouldSkipImplementationAutoComplete(task, townRoot, rig, runner.v) {
