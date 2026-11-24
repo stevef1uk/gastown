@@ -184,6 +184,7 @@ Follow the **red-green-refactor** cycle for every bead that has a test path in `
 - Only files under `{{layout_root}}/`
 - After EDIT/WRITE, gt-agent runs post-write verify automatically
 - After QA failure: READ the failing file and dependencies. Diagnose from error output — one sentence explanation, then fix with EDIT/WRITE.
+- **Fixing code in the same package for test beads:** When implementing or fixing tests (a test bead `*_test.go` is active), you ARE permitted and expected to fix bugs in the production code files in the same package (e.g. edit `api.go` or `app.go` when `app_test.go` exposes bugs). Do NOT fail to planning or ask for beads to be reopened for production files in the same package — fix them directly with **EDIT:**, make the tests pass, and close your test bead.
 - Test compilation or collection errors in another package are implementation/test rework, not an architecture change. Include the exact failed-verification output in failure feedback so recovery can select the owning source bead and test companion. Align both with SPEC/architecture, preserving meaningful assertions; do not invent compatibility types or aliases merely to silence stale tests.
 - Web frontend (app.js, index.html): plain JavaScript (no ES module imports). Match DOM IDs exactly between files. No server-side function calls. {{static_url_contract_short}}
 - SQL beads (.sql): validate with the verify command in the Next bead line — do NOT run pytest on .sql files

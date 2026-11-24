@@ -230,16 +230,20 @@ func AllowedCorrelatedPackageImplementWrite(activePath, writtenPath string, v Wo
 	if !sameGoImplementPackage(activePath, writtenPath, v.LayoutRoot) {
 		return false
 	}
+	allRequired := v.RequiredFiles
+	if v.HasPhasedDelivery() {
+		allRequired = v.UnionRequiredFiles()
+	}
 	if IsTestImplementPath(activePath) && !IsTestImplementPath(writtenPath) {
 		if src := SourcePathForCorrelatedTest(activePath, v.LayoutRoot); src != "" &&
-			PathMatchesImplementWrite(writtenPath, src, v.RequiredFiles, v) {
+			PathMatchesImplementWrite(writtenPath, src, allRequired, v) {
 			return true
 		}
 		return productionGoPathInRequiredFiles(writtenPath, v)
 	}
 	if !IsTestImplementPath(activePath) && IsTestImplementPath(writtenPath) {
 		if test := CorrelatedTestPathForSource(activePath, v); test != "" &&
-			PathMatchesImplementWrite(writtenPath, test, v.RequiredFiles, v) {
+			PathMatchesImplementWrite(writtenPath, test, allRequired, v) {
 			return true
 		}
 	}
@@ -279,7 +283,11 @@ func productionGoPathInRequiredFiles(path string, v WorkflowValidation) bool {
 	if path == "" || IsTestImplementPath(path) || !strings.HasSuffix(path, ".go") {
 		return false
 	}
-	for _, want := range v.RequiredFiles {
+	reqs := v.RequiredFiles
+	if v.HasPhasedDelivery() {
+		reqs = v.UnionRequiredFiles()
+	}
+	for _, want := range reqs {
 		if pathMatchesRequired(path, []string{want}) {
 			return true
 		}

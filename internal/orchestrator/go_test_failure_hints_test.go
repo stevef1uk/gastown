@@ -158,3 +158,27 @@ func TestFormatGoTestFailureHints_nilSlice(t *testing.T) {
 		t.Fatalf("hint = %q", hint)
 	}
 }
+
+func TestFormatGoTestFailureHints_suggestsSamePackageProductionForTestBead(t *testing.T) {
+	t.Parallel()
+	out := "--- FAIL: TestTasksCRUD (0.01s)\n    app_test.go:85: got 200 want 404\nFAIL\n"
+	v := DefaultWorkflowValidation()
+	v.LayoutRoot = "taskboard"
+	v.QAVerifyCommand = "cd taskboard && go test ./..."
+	v.DeliveryPhases = []DeliveryPhase{
+		{
+			ID:            "phase-1-app",
+			RequiredFiles: []string{"taskboard/internal/web/api.go", "taskboard/internal/web/app.go"},
+		},
+		{
+			ID:            "phase-2-kanban",
+			RequiredFiles: []string{"taskboard/internal/web/app_test.go"},
+		},
+	}
+	v.RequiredFiles = []string{"taskboard/internal/web/app_test.go"}
+
+	hint := FormatGoTestFailureHints("", "", "taskboard/internal/web/app_test.go", out, nil, v)
+	if !strings.Contains(hint, "taskboard/internal/web/api.go") {
+		t.Fatalf("expected hint to mention api.go, got:\n%s", hint)
+	}
+}

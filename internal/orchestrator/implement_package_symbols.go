@@ -23,7 +23,11 @@ func sameGoImplementPackage(a, b, layoutRoot string) bool {
 
 func earlierSamePackageFiles(relPath string, v WorkflowValidation) []string {
 	var out []string
-	for _, p := range EarlierRequiredFilesForBead(relPath, v.RequiredFiles) {
+	reqs := v.RequiredFiles
+	if v.HasPhasedDelivery() {
+		reqs = v.UnionRequiredFiles()
+	}
+	for _, p := range EarlierRequiredFilesForBead(relPath, reqs) {
 		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 			continue
 		}

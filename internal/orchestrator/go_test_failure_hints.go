@@ -192,6 +192,26 @@ func FormatGoTestFailureHints(townRoot, rig, activeBeadPath, cmdOutput string, e
 		return ""
 	}
 	prod := GoTestFailureProductionPaths(cmdOutput, v.LayoutRoot)
+	if IsTestImplementPath(activeBeadPath) {
+		allReqs := v.RequiredFiles
+		if v.HasPhasedDelivery() {
+			allReqs = v.UnionRequiredFiles()
+		}
+		for _, req := range allReqs {
+			if strings.HasSuffix(req, ".go") && !IsTestImplementPath(req) && sameGoImplementPackage(activeBeadPath, req, v.LayoutRoot) {
+				found := false
+				for _, p := range prod {
+					if p == req {
+						found = true
+						break
+					}
+				}
+				if !found {
+					prod = append(prod, req)
+				}
+			}
+		}
+	}
 	merged := append(append([]string{}, errorPaths...), prod...)
 	if hint := FormatClosedDependencyCompileHints(townRoot, rig, activeBeadPath, merged, cmdOutput, v); hint != "" {
 		return hint

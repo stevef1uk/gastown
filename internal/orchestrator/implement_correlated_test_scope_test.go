@@ -161,3 +161,36 @@ func TestValidateImplementWritePath_correlatedGoTest_table(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateImplementWritePath_phasedDeliveryEarlierPhaseProductionFile(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	v := DefaultWorkflowValidation()
+	v.LayoutRoot = "taskboard"
+	v.QAVerifyCommand = "cd taskboard && go test ./..."
+	v.DeliveryPhases = []DeliveryPhase{
+		{
+			ID:            "phase-1-app",
+			RequiredFiles: []string{"taskboard/internal/web/api.go", "taskboard/internal/web/app.go"},
+		},
+		{
+			ID:            "phase-2-kanban",
+			RequiredFiles: []string{"taskboard/internal/web/app_test.go"},
+		},
+	}
+	v.RequiredFiles = []string{"taskboard/internal/web/app_test.go"}
+
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		if status == "in_progress" {
+			return []PlanBead{{
+				ID:    "ta-oe1",
+				Title: "Implement taskboard/internal/web/app_test.go per architecture",
+			}}, nil
+		}
+		return nil, nil
+	})
+
+	if err := ValidateImplementWritePath(dir, rig, "ta-oe1", "taskboard/internal/web/api.go", v, false, "--- FAIL: TestTasksCRUD", nil); err != nil {
+		t.Fatalf("expected write to earlier phase api.go to be allowed: %v", err)
+	}
+}
