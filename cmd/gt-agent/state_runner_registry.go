@@ -55,9 +55,10 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 			if id == "" {
 				return fmt.Errorf("test review repair requires an explicit bead ID for bd close")
 			}
-			for repairID := range repair.TestRepairFiles {
+			repairFiles := orchestrator.FilterTestRepairFilesToPhase(r.v, repair.TestRepairFiles)
+			for repairID := range repairFiles {
 				if regexp.MustCompile(`(^|[^[:alnum:]_-])` + regexp.QuoteMeta(repairID) + `($|[^[:alnum:]_-])`).MatchString(cmd) {
-					if err := orchestrator.ValidateTestRepairChanges(rigMayorRigDir(r.townRoot, r.rig), repair.TestRepairFiles, repairID); err != nil {
+					if err := orchestrator.ValidateTestRepairChanges(rigMayorRigDir(r.townRoot, r.rig), repairFiles, repairID); err != nil {
 						return err
 					}
 				}
@@ -335,7 +336,8 @@ var artifactValidators = map[string]artifactValidateFn{
 	},
 	"implementation": func(r *stateRunner, outcome string) error {
 		if repair := taskTestRepair(r.task); outcome == "success" && repair != nil {
-			if err := orchestrator.ValidateTestRepairChanges(rigMayorRigDir(r.townRoot, r.rig), repair.TestRepairFiles, ""); err != nil {
+			repairFiles := orchestrator.FilterTestRepairFilesToPhase(r.v, repair.TestRepairFiles)
+			if err := orchestrator.ValidateTestRepairChanges(rigMayorRigDir(r.townRoot, r.rig), repairFiles, ""); err != nil {
 				return err
 			}
 		}
@@ -361,10 +363,11 @@ var artifactValidators = map[string]artifactValidateFn{
 		}
 		if repair := taskTestRepair(r.task); outcome == "success" && repair != nil {
 			rigDir := rigMayorRigDir(r.townRoot, r.rig)
-			if err := orchestrator.ValidateTestRepairChanges(rigDir, repair.TestRepairFiles, ""); err != nil {
+			repairFiles := orchestrator.FilterTestRepairFilesToPhase(r.v, repair.TestRepairFiles)
+			if err := orchestrator.ValidateTestRepairChanges(rigDir, repairFiles, ""); err != nil {
 				return err
 			}
-			if err := orchestrator.ValidateTestRepairEvidence(rigDir, repair.TestRepairFiles); err != nil {
+			if err := orchestrator.ValidateTestRepairEvidence(rigDir, repairFiles); err != nil {
 				return err
 			}
 		}

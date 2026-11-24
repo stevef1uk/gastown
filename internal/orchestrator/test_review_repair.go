@@ -198,6 +198,9 @@ func selectTestReviewRepair(rigDir string, v WorkflowValidation, plan, summary s
 					break
 				}
 			}
+			if idx > v.ActivePhaseIndex() {
+				continue
+			}
 		}
 		if len(selected.beads) == 0 || idx < targetIdx {
 			selected = testReviewRepair{phase: candidate.phase, tests: map[string][]string{}}
@@ -348,6 +351,28 @@ func snapshotTestRepairFiles(rigDir string, tests map[string][]string) (map[stri
 		}
 	}
 	return baseline, nil
+}
+
+// FilterTestRepairFilesToPhase returns only the repair files that belong to the
+// currently active delivery phase. If phased delivery is not configured, all
+// repair files are returned unchanged.
+func FilterTestRepairFilesToPhase(v WorkflowValidation, files map[string]map[string]string) map[string]map[string]string {
+	if !v.HasPhasedDelivery() || len(files) == 0 {
+		return files
+	}
+	activeIdx := v.ActivePhaseIndex()
+	filtered := make(map[string]map[string]string)
+	for beadID, paths := range files {
+		for path, hash := range paths {
+			if v.FindDeliveryPhaseForFile(path) == activeIdx {
+				if filtered[beadID] == nil {
+					filtered[beadID] = make(map[string]string)
+				}
+				filtered[beadID][path] = hash
+			}
+		}
+	}
+	return filtered
 }
 
 // ValidateTestRepairChanges checks the original on-disk contents, not activity

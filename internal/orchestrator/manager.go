@@ -352,15 +352,17 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	}
 	if rig != "" && outcome == "success" && activeTestRepair != nil {
 		rigDir := filepath.Join(m.townRoot, rig, "mayor", "rig")
+		v := m.workflowValidationFor(inst, tpl)
+		repairFiles := FilterTestRepairFilesToPhase(v, activeTestRepair.TestRepairFiles)
 		if fromState == "implementation" {
-			if err := ValidateTestRepairChanges(rigDir, activeTestRepair.TestRepairFiles, ""); err != nil {
+			if err := ValidateTestRepairChanges(rigDir, repairFiles, ""); err != nil {
 				return "", err
 			}
 		} else if fromState == "test_review" {
-			if err := ValidateTestRepairChanges(rigDir, activeTestRepair.TestRepairFiles, ""); err != nil {
+			if err := ValidateTestRepairChanges(rigDir, repairFiles, ""); err != nil {
 				return "", err
 			}
-			if err := ValidateTestRepairEvidence(rigDir, activeTestRepair.TestRepairFiles); err != nil {
+			if err := ValidateTestRepairEvidence(rigDir, repairFiles); err != nil {
 				return "", err
 			}
 		}
