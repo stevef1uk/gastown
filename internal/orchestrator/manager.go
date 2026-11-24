@@ -936,7 +936,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		// design or planning — otherwise previously-closed beads stay closed
 		// and the pipeline deadlocks when planning tries to validate them.
 		if rig != "" && phaseAdvance == nil && next == "planning" && outcome != "plan_dependency_blocked" &&
-			(fromState == "qa_review" || fromState == "test_review" || fromState == "plan_review") {
+			(fromState == "qa_review" || fromState == "test_review" || fromState == "plan_review" || fromState == "implementation") {
 			v := m.workflowValidationFor(inst, tpl)
 			if reopened, rerr := ReopenImplementationBeadsAfterQAFailure(m.townRoot, rig, v, summary); rerr != nil {
 				fmt.Printf("[Manager] Warning: reopen implement beads after %s failure: %v\n", fromState, rerr)

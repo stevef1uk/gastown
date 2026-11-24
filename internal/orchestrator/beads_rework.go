@@ -122,6 +122,24 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 		reopened = append(reopened, more...)
 	}
 
+	// Reopen closed beads for any required file explicitly mentioned in the failure summary
+	// (e.g. "Three production bugs in internal/web/api.go ... Reopen the api.go owning bead").
+	var mentionedPaths []string
+	for _, req := range v.UnionRequiredFiles() {
+		rel := filepath.ToSlash(strings.TrimSpace(req))
+		base := filepath.Base(rel)
+		if strings.Contains(summary, rel) || (base != "" && len(base) > 3 && strings.Contains(summary, base)) {
+			mentionedPaths = append(mentionedPaths, rel)
+		}
+	}
+	if len(mentionedPaths) > 0 {
+		more, err := reopenClosedImplementBeadsForPaths(townRoot, rig, v, mentionedPaths)
+		if err != nil {
+			return reopened, err
+		}
+		reopened = append(reopened, more...)
+	}
+
 	// QA failure indicates missing implementation (imports, 404/405 on routes) but
 	// cited IDs don't cover all missing files. Audit the FULL profile's required_files
 	// (not just active phase) for missing/stubbed implementation files and reopen their beads.

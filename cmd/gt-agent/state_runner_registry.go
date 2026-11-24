@@ -377,6 +377,9 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 		return validateDesignArtifacts(r.townRoot, r.rig, r.track.designArchWritten, r.track.startedAt, r.v)
 	},
 	"planning": func(r *stateRunner) error {
+		if r.task != nil && r.task.PendingRework != nil {
+			return fmt.Errorf("rework pending from %s — planner must process rework before auto-completing", r.task.PendingRework.FromState)
+		}
 		return r.validateArtifacts("success")
 	},
 	"plan_review": func(r *stateRunner) error {

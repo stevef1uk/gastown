@@ -45,12 +45,18 @@ func extractReadPathFromSegment(segment, layoutRoot string) string {
 		if rest == "" {
 			return ""
 		}
-		// First path token (stop at flags, pipes, redirects).
+		// First path token (skip flags, stop at pipes/redirects).
 		fields := strings.Fields(rest)
-		if len(fields) == 0 {
-			return ""
+		for _, field := range fields {
+			if strings.HasPrefix(field, "-") {
+				continue
+			}
+			if field == ">" || field == ">>" || field == "|" || field == "<" {
+				break
+			}
+			return normalizeImplementReadPath(field, layoutRoot)
 		}
-		return normalizeImplementReadPath(fields[0], layoutRoot)
+		return ""
 	}
 	return ""
 }

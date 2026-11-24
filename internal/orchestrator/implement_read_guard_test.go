@@ -19,6 +19,21 @@ func TestExtractImplementReadPathsFromCmd(t *testing.T) {
 	if paths[0] != "linkshelf/internal/store/store_test.go" {
 		t.Fatalf("first = %q", paths[0])
 	}
+
+	// Command with flags like cat -n, head -20
+	flagged := ExtractImplementReadPathsFromCmd(
+		"cd rig/mayor/rig && cat -n linkshelf/internal/web/api.go && head -20 linkshelf/internal/model/model.go",
+		"linkshelf",
+	)
+	if len(flagged) != 2 {
+		t.Fatalf("flagged paths = %v", flagged)
+	}
+	if flagged[0] != "linkshelf/internal/web/api.go" {
+		t.Fatalf("first flagged = %q", flagged[0])
+	}
+	if flagged[1] != "linkshelf/internal/model/model.go" {
+		t.Fatalf("second flagged = %q", flagged[1])
+	}
 }
 
 func TestValidateImplementReadMissingFile_separateTestBead(t *testing.T) {
