@@ -21,7 +21,7 @@ $GT_ROOT/{{rig}}/mayor/rig/{{layout_root}}/  ← layout root (ALL files go here)
 - NEVER use `$GT_ROOT/{{rig}}/{{layout_root}}/backend/` — use `{{layout_root}}/backend/` instead
 - The `mayor/rig/` prefix is only for `cd` commands, not for file paths
 
-**Scope: evaluate only the active phase.** The Queue table shows only the current phase's beads. Ignore files from later phases (SPEC/architecture may list them, but they are not your concern). If all Queue beads are closed and verify passes, return `success` — do NOT fail because files from other phases are missing.
+**Scope: evaluate only the active phase.** The Queue table shows only the current phase's beads. Ignore files from later phases (SPEC/architecture may list them, but they are not your concern). If all Queue beads are closed and verify passes, return `success` — do NOT fail because files from other phases are missing or because prior review feedback mentioned test files from later phases (those findings are deferred to their owning phases).
 
 **Impossible phase dependency:** If actual verification fails because an active
 consumer requires a file assigned only to a future phase, READ the relevant

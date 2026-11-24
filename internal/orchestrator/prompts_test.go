@@ -290,3 +290,55 @@ func TestRigFlowYAML_qaInstructionsMentionArchitectureStaticURLs(t *testing.T) {
 		t.Fatal("qa_review yaml instructions must not hardcode /app.js")
 	}
 }
+
+func TestBuildTaskPromptPayload_PhasedActiveTestRepairFiltering(t *testing.T) {
+	t.Parallel()
+	tpl := loadRigFlowTemplate(t)
+	tpl.Validation.DeliveryPhases = []DeliveryPhase{
+		{ID: "phase-1", RequiredFiles: []string{"pkg/a.go", "pkg/a_test.go"}},
+		{ID: "phase-2", RequiredFiles: []string{"pkg/b.go", "pkg/b_test.go"}},
+	}
+	tpl.Validation.ActivePhaseIDField = "phase-1"
+
+	inst := &WorkflowInstance{
+		TemplateID:   "rig-flow",
+		CurrentState: "implementation",
+		ActiveTestRepair: &WorkflowRework{
+			FromState: "test_review",
+			Outcome:   "failure",
+			Summary:   "b_test.go failed",
+			TestRepairFiles: map[string]map[string]string{
+				"bead-2": {"pkg/b_test.go": "hash1"},
+			},
+		},
+		Variables: map[string]string{
+			"active_phase_id": "phase-1",
+		},
+	}
+
+	m := &Manager{townRoot: t.TempDir()}
+	state := tpl.States["implementation"]
+	state.PromptFile = ""
+	state.Instructions = "implementation instructions"
+	payload, err := m.BuildTaskPayload(inst, tpl, state)
+	if err != nil {
+		t.Fatalf("BuildTaskPayload: %v", err)
+	}
+	if payload["active_test_repair"] != nil {
+		t.Fatalf("expected active_test_repair to be excluded for phase-1 when all repair files belong to phase-2, got %+v", payload["active_test_repair"])
+	}
+	if payload["pending_rework"] != nil {
+		t.Fatalf("expected pending_rework to be excluded for phase-1 when repair belongs to phase-2, got %+v", payload["pending_rework"])
+	}
+
+	// When active phase is phase-2, repair should be included.
+	tpl.Validation.ActivePhaseIDField = "phase-2"
+	inst.Variables["active_phase_id"] = "phase-2"
+	payload2, err := m.BuildTaskPayload(inst, tpl, state)
+	if err != nil {
+		t.Fatalf("BuildTaskPayload phase-2: %v", err)
+	}
+	if payload2["active_test_repair"] == nil {
+		t.Fatalf("expected active_test_repair to be present for phase-2")
+	}
+}

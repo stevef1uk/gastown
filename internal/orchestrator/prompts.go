@@ -173,13 +173,31 @@ func (m *Manager) BuildTaskPayload(inst *WorkflowInstance, tpl *WorkflowTemplate
 		payload["pending_rework"] = inst.PendingRework
 	}
 	if (inst.CurrentState == "implementation" || inst.CurrentState == "test_review") && inst.ActiveTestRepair != nil {
-		payload["active_test_repair"] = inst.ActiveTestRepair
-		if inst.PendingRework == nil || inst.PendingRework.FromState != "test_review" {
-			repair := *inst.ActiveTestRepair
-			if inst.PendingRework != nil {
-				repair.Feedback = strings.TrimSpace(repair.Feedback + "\n\nMost recent intervening rework:\n" + inst.PendingRework.Summary + "\n" + inst.PendingRework.Feedback)
+		activeInPhase := true
+		if validation.HasPhasedDelivery() && len(inst.ActiveTestRepair.TestRepairFiles) > 0 {
+			activeInPhase = false
+			activeIdx := validation.ActivePhaseIndex()
+			for _, paths := range inst.ActiveTestRepair.TestRepairFiles {
+				for path := range paths {
+					if idx := validation.FindDeliveryPhaseForFile(path); idx == activeIdx {
+						activeInPhase = true
+						break
+					}
+				}
+				if activeInPhase {
+					break
+				}
 			}
-			payload["pending_rework"] = &repair
+		}
+		if activeInPhase {
+			payload["active_test_repair"] = inst.ActiveTestRepair
+			if inst.PendingRework == nil || inst.PendingRework.FromState != "test_review" {
+				repair := *inst.ActiveTestRepair
+				if inst.PendingRework != nil {
+					repair.Feedback = strings.TrimSpace(repair.Feedback + "\n\nMost recent intervening rework:\n" + inst.PendingRework.Summary + "\n" + inst.PendingRework.Feedback)
+				}
+				payload["pending_rework"] = &repair
+			}
 		}
 	}
 	if inst.CurrentState == "test_review" {

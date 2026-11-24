@@ -388,12 +388,49 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 	"implementation": func(r *stateRunner) error {
 		// Block auto-complete when test_review or qa_review just failed — the Polecat
 		// must actually fix the failing test or runtime issue before proceeding.
-		if taskTestRepair(r.task) != nil {
-			return fmt.Errorf("test review rework pending — must fix issues before auto-completing")
+		repair := taskTestRepair(r.task)
+		if repair != nil {
+			inScope := true
+			if r.v.HasPhasedDelivery() && len(repair.TestRepairFiles) > 0 {
+				inScope = false
+				activeIdx := r.v.ActivePhaseIndex()
+				for _, paths := range repair.TestRepairFiles {
+					for path := range paths {
+						if idx := r.v.FindDeliveryPhaseForFile(path); idx == activeIdx {
+							inScope = true
+							break
+						}
+					}
+					if inScope {
+						break
+					}
+				}
+			}
+			if inScope {
+				return fmt.Errorf("test review rework pending — must fix issues before auto-completing")
+			}
 		}
 		if r.task != nil && r.task.PendingRework != nil &&
 			(r.task.PendingRework.FromState == "test_review" || r.task.PendingRework.FromState == "qa_review") {
-			return fmt.Errorf("rework pending from %s — must fix issues before auto-completing", r.task.PendingRework.FromState)
+			inScope := true
+			if r.v.HasPhasedDelivery() && len(r.task.PendingRework.TestRepairFiles) > 0 {
+				inScope = false
+				activeIdx := r.v.ActivePhaseIndex()
+				for _, paths := range r.task.PendingRework.TestRepairFiles {
+					for path := range paths {
+						if idx := r.v.FindDeliveryPhaseForFile(path); idx == activeIdx {
+							inScope = true
+							break
+						}
+					}
+					if inScope {
+						break
+					}
+				}
+			}
+			if inScope {
+				return fmt.Errorf("rework pending from %s — must fix issues before auto-completing", r.task.PendingRework.FromState)
+			}
 		}
 		// Do not auto-complete without green verify when profile defines QA (pytest/go test).
 		if strings.TrimSpace(r.v.QAVerifyCommand) != "" && !r.track.verifyOK {

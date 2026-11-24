@@ -231,10 +231,29 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		orchestratedPrintf("[gt-agent] injecting QA/review rework context for %s/%s\n", task.WorkflowID, task.State)
 	}
 	if task.ActiveTestRepair != nil && (task.PendingRework == nil || task.PendingRework.FromState != "test_review") {
-		reviewTask := *task
-		reviewTask.PendingRework = task.ActiveTestRepair
-		if block := formatWorkflowReworkBlock(&reviewTask, townRoot, rig); block != "" {
-			contextBlocks = append(contextBlocks, block)
+		v := taskValidation(townRoot, task).ForActivePhase()
+		activeInPhase := true
+		if v.HasPhasedDelivery() && len(task.ActiveTestRepair.TestRepairFiles) > 0 {
+			activeInPhase = false
+			activeIdx := v.ActivePhaseIndex()
+			for _, paths := range task.ActiveTestRepair.TestRepairFiles {
+				for path := range paths {
+					if idx := v.FindDeliveryPhaseForFile(path); idx == activeIdx {
+						activeInPhase = true
+						break
+					}
+				}
+				if activeInPhase {
+					break
+				}
+			}
+		}
+		if activeInPhase {
+			reviewTask := *task
+			reviewTask.PendingRework = task.ActiveTestRepair
+			if block := formatWorkflowReworkBlock(&reviewTask, townRoot, rig); block != "" {
+				contextBlocks = append(contextBlocks, block)
+			}
 		}
 	}
 	if task.DeferredTestReview != nil {
@@ -904,6 +923,10 @@ func formatWorkflowReworkBlock(task *orchestrator.Task, townRoot, rig string) st
 		b.WriteString("\nAddress the issues above. Use bead IDs and paths from command output — do not invent IDs.\n")
 	}
 	v := taskValidation(townRoot, task).ForActivePhase()
+	if v.HasPhasedDelivery() && task.State == "implementation" {
+		b.WriteString(fmt.Sprintf("\n### Phased Delivery Scope (%s)\n", v.ActivePhaseID()))
+		b.WriteString("Only files assigned to the active phase (" + v.ActivePhaseID() + ") are in scope. If review findings or tests reference files from other phases, those findings are DEFERRED to those phases. Do NOT edit files from other phases or report failure because of them. When all beads for " + v.ActivePhaseID() + " are closed and verify passes, return success.\n")
+	}
 	b.WriteString(workflowReworkHints(r.FromState, task.State, rig, r.Summary, v))
 	if task.State == "implementation" && (r.Outcome == "failure" || r.Outcome == "timeout") {
 		if r.FromState == "test_review" && len(r.TestRepairFiles) > 0 {
