@@ -386,6 +386,9 @@ const (
 	// EmojiArchitect is the architect emoji (building).
 	EmojiArchitect = "🏗️"
 
+	// EmojiAnalyst is the analyst emoji (microscope).
+	EmojiAnalyst = "🔬"
+
 	// EmojiQA is the qa emoji (magnifying glass).
 	EmojiQA = "🔍"
 
@@ -468,6 +471,8 @@ func RoleEmoji(role string) string {
 		return EmojiBoot
 	case RoleArchitect:
 		return EmojiArchitect
+	case RoleAnalyst:
+		return EmojiAnalyst
 	case RoleQA:
 		return EmojiQA
 	case RoleTester:

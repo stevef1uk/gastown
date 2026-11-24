@@ -1134,6 +1134,7 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 		constants.RoleWitness:   constants.EmojiWitness,
 		constants.RoleRefinery:  constants.EmojiRefinery,
 		constants.RoleArchitect: constants.EmojiArchitect,
+		constants.RoleAnalyst:   constants.EmojiAnalyst,
 		constants.RoleQA:        constants.EmojiQA,
 		constants.RoleTester:    constants.EmojiTester,
 		constants.RoleCrew:      constants.EmojiCrew,
@@ -1174,7 +1175,7 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 		fmt.Fprintf(w, "─── %s ───────────────────────────────────────────\n\n", style.Bold.Render(r.Name+"/"))
 
 		// Group agents by role
-		var witnesses, refineries, architects, planners, qas, mechanics, crews, polecats, testers []AgentRuntime
+		var witnesses, refineries, architects, analysts, planners, qas, mechanics, crews, polecats, testers []AgentRuntime
 		for _, agent := range r.Agents {
 			switch agent.Role {
 			case constants.RoleWitness:
@@ -1183,6 +1184,8 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 				refineries = append(refineries, agent)
 			case constants.RoleArchitect:
 				architects = append(architects, agent)
+			case constants.RoleAnalyst:
+				analysts = append(analysts, agent)
 			case constants.RolePlanner:
 				planners = append(planners, agent)
 			case constants.RoleQA:
@@ -1254,6 +1257,21 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 			} else {
 				for _, agent := range architects {
 					renderAgentCompact(w, agent, roleIcons[constants.RoleArchitect]+" ", r.Hooks, status.Location)
+				}
+			}
+		}
+
+		// Analyst
+		if len(analysts) > 0 {
+			if statusVerbose {
+				fmt.Fprintf(w, "%s %s\n", roleIcons[constants.RoleAnalyst], style.Bold.Render("Analyst"))
+				for _, agent := range analysts {
+					renderAgentDetails(w, agent, "   ", r.Hooks, status.Location)
+				}
+				fmt.Fprintln(w)
+			} else {
+				for _, agent := range analysts {
+					renderAgentCompact(w, agent, roleIcons[constants.RoleAnalyst]+" ", r.Hooks, status.Location)
 				}
 			}
 		}
@@ -1952,6 +1970,18 @@ func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, 
 			session: session.ArchitectSessionName(session.PrefixFor(r.Name), r.Name),
 			role:    constants.RoleArchitect,
 			beadID:  beads.ArchitectBeadIDWithPrefix(prefix, r.Name),
+		})
+	}
+
+	// Analyst (per-rig)
+	analystDir := filepath.Join(r.Path, "analyst")
+	if _, err := os.Stat(analystDir); err == nil {
+		defs = append(defs, agentDef{
+			name:    constants.RoleAnalyst,
+			address: r.Name + "/analyst",
+			session: session.AnalystSessionName(session.PrefixFor(r.Name), r.Name),
+			role:    constants.RoleAnalyst,
+			beadID:  beads.AnalystBeadIDWithPrefix(prefix, r.Name),
 		})
 	}
 

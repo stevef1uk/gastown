@@ -29,7 +29,7 @@ func SessionShouldAutoRespawn(townRoot, sessionID string) bool {
 }
 
 func isOrchestratedRigPipelineSession(sessionID string) bool {
-	for _, suffix := range []string{"-polecat", "-architect", "-planner", "-qa"} {
+	for _, suffix := range []string{"-polecat", "-architect", "-planner", "-analyst", "-qa"} {
 		if strings.HasSuffix(sessionID, suffix) {
 			return true
 		}
@@ -43,7 +43,7 @@ func rigNameFromPipelineSessionID(sessionID string) string {
 		return ""
 	}
 	rest := strings.TrimPrefix(sessionID, "te-")
-	for _, suffix := range []string{"-polecat", "-architect", "-planner", "-qa", "-witness", "-refinery"} {
+	for _, suffix := range []string{"-polecat", "-architect", "-planner", "-analyst", "-qa", "-witness", "-refinery"} {
 		if strings.HasSuffix(rest, suffix) {
 			return strings.TrimSuffix(rest, suffix)
 		}

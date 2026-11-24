@@ -1312,6 +1312,12 @@ func (m *Manager) initAgentBeads(rigPath, rigName, prefix string) error {
 			desc:     fmt.Sprintf("Architect for %s - manages high-level design and architecture.", rigName),
 		},
 		{
+			id:       beads.AnalystBeadIDWithPrefix(prefix, rigName),
+			roleType: "analyst",
+			rig:      rigName,
+			desc:     fmt.Sprintf("Analyst for %s - analyzes requirements and produces SPEC.md.", rigName),
+		},
+		{
 			id:       beads.QABeadIDWithPrefix(prefix, rigName),
 			roleType: "qa",
 			rig:      rigName,

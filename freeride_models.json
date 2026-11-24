@@ -52,6 +52,7 @@
   },
   "role_agents": {
     "architect": "gt-agent-architect",
+    "analyst": "gt-agent-gemini",
     "crew": "gt-agent-local",
     "deacon": "gt-agent-local",
     "mechanic": "gt-agent-local",

@@ -618,6 +618,8 @@ func rigPipelineRoles(rigName string) []rigPipelineRole {
 	prefix := session.PrefixFor(rigName)
 	return []rigPipelineRole{
 		{"Architect", session.ArchitectSessionName(prefix, rigName)},
+		{"Planner", session.PlannerSessionName(prefix, rigName)},
+		{"Analyst", session.AnalystSessionName(prefix, rigName)},
 		{"QA", session.QASessionName(prefix, rigName)},
 		{"Polecat", session.RigPolecatSessionName(prefix, rigName)},
 	}

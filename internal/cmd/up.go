@@ -1009,6 +1009,8 @@ func startRigAgentPhase(rigNames []string, prefetchedRigs map[string]*rig.Rig, r
 					result = upStartArchitect(task.rigName, task.rigObj)
 				case constants.RolePlanner:
 					result = upStartPlanner(task.rigName, task.rigObj)
+				case constants.RoleAnalyst:
+					result = upStartAnalyst(task.rigName, task.rigObj)
 				case constants.RoleQA:
 					result = upStartQA(task.rigName, task.rigObj)
 				case constants.RoleTester:

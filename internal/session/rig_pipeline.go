@@ -11,6 +11,8 @@ func RigPipelineSessionIDs(rigName string) []string {
 	prefix := PrefixFor(rigName)
 	return []string{
 		ArchitectSessionName(prefix, rigName),
+		PlannerSessionName(prefix, rigName),
+		AnalystSessionName(prefix, rigName),
 		QASessionName(prefix, rigName),
 		RigPolecatSessionName(prefix, rigName),
 	}

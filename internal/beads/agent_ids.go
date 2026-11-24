@@ -385,6 +385,16 @@ func ArchitectBeadIDRig(rig string) string {
 	return ArchitectBeadIDWithPrefix("gt", rig)
 }
 
+// AnalystBeadIDWithPrefix returns the Analyst agent bead ID for a rig using the specified prefix.
+func AnalystBeadIDWithPrefix(prefix, rig string) string {
+	return AgentBeadIDWithPrefix(prefix, rig, constants.RoleAnalyst, "")
+}
+
+// AnalystBeadIDRig returns the Analyst agent bead ID for a rig using "gt" prefix.
+func AnalystBeadIDRig(rig string) string {
+	return AnalystBeadIDWithPrefix("gt", rig)
+}
+
 // QABeadIDWithPrefix returns the QA agent bead ID for a rig using the specified prefix.
 func QABeadIDWithPrefix(prefix, rig string) string {
 	return AgentBeadIDWithPrefix(prefix, rig, constants.RoleQA, "")

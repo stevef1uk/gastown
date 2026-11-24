@@ -10,6 +10,7 @@
   "models": {
     "judge": "deepseek/deepseek-v4-flash",
     "architect": "google/gemini-3.6-flash",
+    "analyst": "google/gemini-3.6-flash",
     "planner": "openai/gpt-5.6-luna",
     "polecat": "google/gemini-3.6-flash",
     "qa": "deepseek/deepseek-v4-flash",

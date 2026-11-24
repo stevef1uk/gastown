@@ -2062,6 +2062,57 @@ func (d *Daemon) ensureQARunning(rigName string) {
 	d.logger.Printf("QA session for %s started successfully", rigName)
 }
 
+// ensureAnalystRunning ensures the analyst for a specific rig is running.
+func (d *Daemon) ensureAnalystRunning(rigName string) {
+	if orchestrator.IsRigWorkflowPaused(d.config.TownRoot, rigName) {
+		return
+	}
+	if reason := orchestrator.SkipRigAgentStartReason(d.config.TownRoot, rigName); reason != "" {
+		return
+	}
+	if operational, reason := d.isRigOperational(rigName); !operational {
+		d.logger.Printf("Skipping analyst auto-start for %s: %s", rigName, reason)
+		name := session.AnalystSessionName(session.PrefixFor(rigName), rigName)
+		if exists, _ := d.sp.Exists(d.ctx, name); exists {
+			d.logger.Printf("Killing leftover analyst %s (rig %s)", name, reason)
+			_ = d.sp.Stop(d.ctx, name, true)
+		}
+		return
+	}
+
+	sessionID := session.AnalystSessionName(session.PrefixFor(rigName), rigName)
+	analystDir := filepath.Join(d.config.TownRoot, rigName, "analyst")
+	_ = os.MkdirAll(analystDir, 0755)
+
+	wantOrch := d.orchestratedForRole(constants.RoleAnalyst)
+	d.restartStalePipelineSession(sessionID, wantOrch)
+
+	if running, _ := d.sp.Exists(d.ctx, sessionID); running {
+		return
+	}
+
+	_, err := session.StartSession(d.ctx, d.sp, &session.SessionConfig{
+		SessionID:    sessionID,
+		WorkDir:      analystDir,
+		Role:         constants.RoleAnalyst,
+		TownRoot:     d.config.TownRoot,
+		RigPath:      filepath.Join(d.config.TownRoot, rigName),
+		RigName:      rigName,
+		Orchestrated: wantOrch,
+		Beacon:       session.BeaconConfig{Recipient: "analyst", Sender: "daemon", Topic: "patrol"},
+		WaitForAgent: false,
+		AutoRespawn:  true,
+	})
+	if err != nil {
+		d.logger.Printf("Error starting analyst for %s: %v", rigName, err)
+		return
+	}
+
+	d.metrics.recordRestart(d.ctx, "analyst")
+	telemetry.RecordDaemonRestart(d.ctx, "analyst-"+rigName)
+	d.logger.Printf("Analyst session for %s started successfully", rigName)
+}
+
 // ensureRigPolecatsRunning ensures orchestrated pipeline polecats are running per rig.
 func (d *Daemon) ensureRigPolecatsRunning() {
 	rigs := d.getKnownRigs()

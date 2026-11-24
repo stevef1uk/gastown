@@ -70,7 +70,7 @@ echo "  Workflow started!"
 
 # Wait for workflow-profile.json to be created by spec-index after spec_review
 echo "=== Waiting for workflow-profile.json ==="
-deadline=$((SECONDS + 120))
+deadline=$((SECONDS + 600))
 while (( SECONDS < deadline )); do
   if [[ -f "$GT_ROOT/$RIG_NAME/mayor/rig/.gastown/workflow-profile.json" ]]; then
     echo "  workflow-profile.json created!"
@@ -84,7 +84,7 @@ while (( SECONDS < deadline )); do
   sleep 2
 done
 if [[ ! -f "$GT_ROOT/$RIG_NAME/mayor/rig/.gastown/workflow-profile.json" ]]; then
-  echo "WARN: workflow-profile.json not created within 120s — run 'gt rig spec-index $RIG_NAME --force' manually"
+  echo "WARN: workflow-profile.json not created within 600s — run 'gt rig spec-index $RIG_NAME --force' manually"
 fi
 
 echo "=== 4. Monitoring ==="

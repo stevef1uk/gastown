@@ -58,6 +58,7 @@ func (d *Daemon) ensureOrchestratedPipelineKeepalive() {
 				d.ensureQARunning(rigName)
 			}
 		}
+		d.ensureAnalystRunning(rigName)
 		// Rig-flow polecat must stay up during implementation even when architect/qa
 		// patrols are absent from mayor/daemon.json (common in orchestrator-only towns).
 		d.ensureRigPolecatRunning(rigName)

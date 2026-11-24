@@ -15,6 +15,7 @@ func TestRoleEmoji(t *testing.T) {
 		{RoleRefinery, EmojiRefinery},
 		{RoleCrew, EmojiCrew},
 		{RolePolecat, EmojiPolecat},
+		{RoleAnalyst, EmojiAnalyst},
 		{"unknown", "❓"},
 		{"", "❓"},
 	}
