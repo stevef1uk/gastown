@@ -521,6 +521,7 @@ func TestPhaseShipsAutomatedTests(t *testing.T) {
 		{"playwright-docker-phase", DeliveryPhase{ID: "integration-test", RequiredFiles: []string{"pingapp/playwright.config.ts", "pingapp/e2e/ping.spec.ts"}, QAVerifyCommand: "cd pingapp && docker compose up --exit-code-from playwright"}, true},
 		{"docker-deploy-phase", DeliveryPhase{ID: "deploy", RequiredFiles: []string{"taskboard/Dockerfile", "taskboard/deploy/k8s/deployment.yaml"}, QAVerifyCommand: "cd taskboard && go test ./... && docker build ."}, false},
 		{"release-docs-phase", DeliveryPhase{ID: "release", RequiredFiles: []string{"taskboard/README.md"}, QAVerifyCommand: "cd taskboard && go test ./..."}, false},
+		{"release-empty-files", DeliveryPhase{ID: "phase-5-release", Title: "Final integration and release QA", RequiredFiles: []string{}, QAVerifyCommand: "cd taskboard && go test ./..."}, false},
 		{"empty-verify", DeliveryPhase{ID: "core", QAVerifyCommand: ""}, true},
 	}
 	for _, c := range cases {

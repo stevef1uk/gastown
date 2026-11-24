@@ -89,6 +89,10 @@ func isNonTestOnlyFile(f string) bool {
 // explicitly says there are no automated tests) has no test file and therefore must
 // NOT get a `### <phase-id>` block in TEST_PLAN.md.
 func PhaseShipsAutomatedTests(p DeliveryPhase) bool {
+	// A release phase with no first-delivery files ships no new code or test deliverables.
+	if len(p.RequiredFiles) == 0 && IsReleasePhase(p) {
+		return false
+	}
 	// A phase whose required_files are all non-test deliverables (manifests, docs,
 	// Dockerfiles, k8s manifests) does not ship automated tests even if its
 	// regression verification command runs go test or pytest.

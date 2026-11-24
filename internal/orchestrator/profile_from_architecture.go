@@ -1468,9 +1468,10 @@ func rebuildDeliveryPhasesFromAuthoritative(v WorkflowValidation, authoritative 
 
 	// Prune any phase that remains empty after distributing all authoritative files,
 	// unless all phases are empty (in which case rebuild via PhasesFromFilePaths).
+	// Release phases declaring "First-delivery files: none" are kept.
 	var keptPhases []DeliveryPhase
 	for _, phase := range v.DeliveryPhases {
-		if len(phase.RequiredFiles) > 0 {
+		if len(phase.RequiredFiles) > 0 || IsReleasePhase(phase) {
 			keptPhases = append(keptPhases, phase)
 		}
 	}
@@ -2204,6 +2205,9 @@ func ValidateRigWorkflowProfileForQA(townRoot, rig string, v WorkflowValidation)
 	for i := range v.DeliveryPhases {
 		phase := &v.DeliveryPhases[i]
 		if phase.RequiredFiles == nil || len(phase.RequiredFiles) == 0 {
+			if IsReleasePhase(*phase) {
+				continue
+			}
 			problems = append(problems, fmt.Sprintf("phase %q has no required_files — QA cannot verify this phase", phase.ID))
 			continue
 		}

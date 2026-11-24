@@ -2122,3 +2122,18 @@ func TryRecoveryFromImportDeadlock(v *WorkflowValidation) (recovered bool, summa
 
 	return false, "no test beads were reallocated — the phase sequencing did not change any test placements"
 }
+
+// IsReleasePhase reports whether a delivery phase is a final integration/release phase.
+// Such phases typically declare "First-delivery files: none" and extend existing files
+// for release QA without introducing new code or test deliverables.
+func IsReleasePhase(p DeliveryPhase) bool {
+	id := strings.ToLower(strings.TrimSpace(p.ID))
+	title := strings.ToLower(strings.TrimSpace(p.Title))
+	focus := strings.ToLower(strings.TrimSpace(p.SpecFocus))
+	return strings.Contains(id, "release") ||
+		strings.Contains(title, "release") ||
+		strings.Contains(id, "final") ||
+		strings.Contains(title, "final") ||
+		strings.Contains(focus, "first-delivery files: none") ||
+		strings.Contains(focus, "first delivery files: none")
+}

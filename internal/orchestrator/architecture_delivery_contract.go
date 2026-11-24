@@ -131,7 +131,7 @@ func architectureDeliveryContract(doc string) ([]DeliveryPhase, bool, error) {
 		}
 		seen := map[string]bool{}
 		for _, p := range contract.DeliveryPhases {
-			if strings.TrimSpace(p.ID) == "" || seen[p.ID] || len(p.RequiredFiles) == 0 || strings.TrimSpace(p.QAVerifyCommand) == "" || isNoOpVerifyCommand(p.QAVerifyCommand) {
+			if strings.TrimSpace(p.ID) == "" || seen[p.ID] || (len(p.RequiredFiles) == 0 && !IsReleasePhase(p)) || strings.TrimSpace(p.QAVerifyCommand) == "" || isNoOpVerifyCommand(p.QAVerifyCommand) {
 				return nil, true, fmt.Errorf("architecture delivery contract: phase %q needs a unique ID, concrete required_files and an executable qa_verify_command", p.ID)
 			}
 			seen[p.ID] = true
