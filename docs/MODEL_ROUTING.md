@@ -152,7 +152,7 @@ rolePrepend:
     - "cerebras/gpt-oss-120b"      # Fallback only (polecat not in rolePrependBeforeOriginal)
     - "deepseek/deepseek-v4-flash" # polecat's originalModel — tried first
   architect:
-    - "openai/gpt-5.6-luna"        # Tried BEFORE architect's originalModel
+    - "openai/gpt-6-luna"        # Tried BEFORE architect's originalModel
     - "cerebras/gpt-oss-120b"
 ```
 
