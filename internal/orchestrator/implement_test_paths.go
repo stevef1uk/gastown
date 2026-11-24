@@ -25,7 +25,9 @@ func IsTestImplementPath(beadPath string) bool {
 	}
 	// TypeScript/JavaScript test files
 	if strings.HasSuffix(lower, ".test.ts") || strings.HasSuffix(lower, ".test.tsx") ||
-		strings.HasSuffix(lower, ".spec.ts") || strings.HasSuffix(lower, ".spec.tsx") {
+		strings.HasSuffix(lower, ".spec.ts") || strings.HasSuffix(lower, ".spec.tsx") ||
+		strings.HasSuffix(lower, ".test.js") || strings.HasSuffix(lower, ".test.jsx") ||
+		strings.HasSuffix(lower, ".spec.js") || strings.HasSuffix(lower, ".spec.jsx") {
 		return true
 	}
 	return false

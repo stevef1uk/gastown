@@ -69,19 +69,38 @@ func isSourceWithCompanionTest(f string) bool {
 // has no test file and therefore must NOT get a `### <phase-id>` block in
 // TEST_PLAN.md. This is the code-side twin of the test_plan.md hard rule
 // ("omit the section for setup-only phases").
+func isNonTestOnlyFile(f string) bool {
+	base := strings.ToLower(filepath.Base(f))
+	switch base {
+	case "go.mod", "go.sum", "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "requirements.txt", "pyproject.toml", "poetry.lock", "uv.lock":
+		return true
+	case "dockerfile", ".dockerignore", "license":
+		return true
+	}
+	if strings.HasSuffix(base, ".md") || strings.HasSuffix(base, ".txt") || strings.HasSuffix(base, ".yaml") || strings.HasSuffix(base, ".yml") {
+		return true
+	}
+	return false
+}
+
+// PhaseShipsAutomatedTests reports whether a delivery phase runs automated tests.
+// A setup-only phase (manifest/config files such as requirements.txt, go.mod,
+// package.json; deployment manifests/Dockerfiles; release docs; verify command that
+// explicitly says there are no automated tests) has no test file and therefore must
+// NOT get a `### <phase-id>` block in TEST_PLAN.md.
 func PhaseShipsAutomatedTests(p DeliveryPhase) bool {
-	// Dependency setup has executable verification, but no source companion to
-	// own a test. Keep this narrow: source/config phases still require tests.
+	// A phase whose required_files are all non-test deliverables (manifests, docs,
+	// Dockerfiles, k8s manifests) does not ship automated tests even if its
+	// regression verification command runs go test or pytest.
 	if len(p.RequiredFiles) > 0 {
-		manifestsOnly := true
+		nonTestOnly := true
 		for _, f := range p.RequiredFiles {
-			switch filepath.Base(f) {
-			case "go.mod", "go.sum", "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "requirements.txt", "pyproject.toml", "poetry.lock", "uv.lock":
-			default:
-				manifestsOnly = false
+			if !isNonTestOnlyFile(f) {
+				nonTestOnly = false
+				break
 			}
 		}
-		if manifestsOnly {
+		if nonTestOnly {
 			return false
 		}
 	}

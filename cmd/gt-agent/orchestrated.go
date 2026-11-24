@@ -1792,15 +1792,14 @@ func rewriteRigDocPathAfterCD(cmd, rig, doc string) (string, bool) {
 	}
 	mayorRig := rigName + "/mayor/rig"
 	lower := strings.ToLower(cmd)
-	if !strings.Contains(lower, strings.ToLower(doc)) || !strings.Contains(lower, "cd ") {
+	if !strings.Contains(lower, strings.ToLower(doc)) {
 		return cmd, false
 	}
 	shellPortion := designCommandShellPortion(cmd)
 	shellLower := strings.ToLower(shellPortion)
-	if !strings.Contains(shellLower, "cd ") {
-		return cmd, false
-	}
-	if !strings.Contains(lower, strings.ToLower(mayorRig)) {
+	cdMayorRig := "cd " + strings.ToLower(mayorRig)
+	cdMayorRigDot := "cd ./" + strings.ToLower(mayorRig)
+	if !strings.Contains(shellLower, cdMayorRig) && !strings.Contains(shellLower, cdMayorRigDot) {
 		return cmd, false
 	}
 	wrong := mayorRig + "/" + doc
