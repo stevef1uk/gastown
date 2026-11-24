@@ -381,7 +381,21 @@ var artifactAutoCompleters = map[string]artifactAutoCompleteFn{
 	},
 	"planning": func(r *stateRunner) error {
 		if r.task != nil && r.task.PendingRework != nil {
-			return fmt.Errorf("rework pending from %s — planner must process rework before auto-completing", r.task.PendingRework.FromState)
+			pr := r.task.PendingRework
+			if r.v.HasPhasedDelivery() {
+				hasActiveIssue := false
+				for _, f := range r.v.ForActivePhase().RequiredFiles {
+					if strings.Contains(pr.Summary, f) || strings.Contains(pr.Feedback, f) {
+						hasActiveIssue = true
+						break
+					}
+				}
+				if hasActiveIssue || pr.FromState == "plan_review" {
+					return fmt.Errorf("rework pending from %s — planner must process rework before auto-completing", pr.FromState)
+				}
+			} else {
+				return fmt.Errorf("rework pending from %s — planner must process rework before auto-completing", pr.FromState)
+			}
 		}
 		return r.validateArtifacts("success")
 	},

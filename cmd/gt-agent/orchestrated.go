@@ -923,9 +923,9 @@ func formatWorkflowReworkBlock(task *orchestrator.Task, townRoot, rig string) st
 		b.WriteString("\nAddress the issues above. Use bead IDs and paths from command output — do not invent IDs.\n")
 	}
 	v := taskValidation(townRoot, task).ForActivePhase()
-	if v.HasPhasedDelivery() && task.State == "implementation" {
+	if v.HasPhasedDelivery() && (task.State == "planning" || task.State == "implementation") {
 		b.WriteString(fmt.Sprintf("\n### Phased Delivery Scope (%s)\n", v.ActivePhaseID()))
-		b.WriteString("Only files assigned to the active phase (" + v.ActivePhaseID() + ") are in scope. If review findings or tests reference files from other phases, those findings are DEFERRED to those phases. Do NOT edit files from other phases or report failure because of them. When all beads for " + v.ActivePhaseID() + " are closed and verify passes, return success.\n")
+		b.WriteString("Only files and beads assigned to the active phase (" + v.ActivePhaseID() + ") are in scope. If review findings or tests reference files or beads from other phases, those findings are DEFERRED to those phases. Do NOT create beads for other phases or report failure because of them. When the active phase is covered, return success.\n")
 	}
 	b.WriteString(workflowReworkHints(r.FromState, task.State, rig, r.Summary, v))
 	if task.State == "implementation" && (r.Outcome == "failure" || r.Outcome == "timeout") {
