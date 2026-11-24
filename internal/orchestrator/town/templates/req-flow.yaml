@@ -265,6 +265,8 @@ states:
         to: test_plan_rework
       implementation_rework:
         to: implementation
+      qa_rework:
+        to: qa_review
       pause:
         to: review_recovery
   test_plan:
