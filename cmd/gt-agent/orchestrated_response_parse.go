@@ -945,9 +945,15 @@ func trimJSONGluedToShellCommand(cmd string) (string, bool) {
 // This catches the common model mistake of gluing reasoning prose after a CMD.
 var proseAfterExtRE = regexp.MustCompile(`(?i)(\.[a-z]{2,4})(The\s+(?:architecture|document|tool|project|above|following|next|previous|current)|We\s+(?:need|can|will|have|are|should|must)|This\s+(?:is|was|has)|It\s+(?:is|was|has|seems)|Let's\s+(?:try|see|test)|So\s+(?:the|let's)|In\s+(?:earlier|summary|order))`)
 
+// proseThoughtRE matches reasoning/thought tags or tokens glued to a file extension or quote.
+var proseThoughtRE = regexp.MustCompile(`(?i)(\.[a-z]{2,4}|["'])(?:</?thought>|thought\b|thinking\b).*$`)
+
 // stripTrailingProse removes English prose glued to the end of a shell command
 // (common model mistake when the LLM continues reasoning on the same line).
 func stripTrailingProse(cmd string) string {
+	if m := proseThoughtRE.FindStringSubmatchIndex(cmd); len(m) >= 4 {
+		return strings.TrimSpace(cmd[:m[3]])
+	}
 	if m := proseAfterExtRE.FindStringSubmatch(cmd); len(m) >= 3 {
 		ext := m[1]   // .md, .go, etc.
 		prose := m[2] // "The architecture...", "We need...", etc.
@@ -1107,6 +1113,10 @@ func isOrchestratedShellNoiseLine(s string) bool {
 		return false
 	}
 	if isNativeEditEndMarker(t) || isOrchestratedNativeToolLine(t) {
+		return true
+	}
+	lower := strings.ToLower(t)
+	if lower == "thought" || lower == "</thought>" || lower == "<thought>" || lower == "thinking" || lower == "</thinking>" || lower == "<thinking>" {
 		return true
 	}
 	upper := strings.ToUpper(t)

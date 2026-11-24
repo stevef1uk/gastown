@@ -955,3 +955,34 @@ func TestParseOrchestratedCommands_withEndCmdNoise(t *testing.T) {
 		t.Fatalf("cmd[1] wrong: %q", cmds[1])
 	}
 }
+
+func TestStripTrailingProse_thoughtMarkers(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"wc -c pwtest/mayor/rig/architecture.mdthought", "wc -c pwtest/mayor/rig/architecture.md"},
+		{"wc -c pwtest/mayor/rig/architecture.mdthought Size is 6216 bytes", "wc -c pwtest/mayor/rig/architecture.md"},
+		{"python3 -c \"print('ok')\"thought", "python3 -c \"print('ok')\""},
+		{"python3 -c 'print(\"ok\")'thought and more text", "python3 -c 'print(\"ok\")'"},
+		{"wc -c architecture.md</thought>", "wc -c architecture.md"},
+		{"cat pwtest/mayor/rig/SPEC.mdThe architecture...", "cat pwtest/mayor/rig/SPEC.md"},
+	}
+	for _, c := range cases {
+		got := stripTrailingProse(c.in)
+		if got != c.want {
+			t.Errorf("stripTrailingProse(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestIsOrchestratedShellNoiseLine_thought(t *testing.T) {
+	t.Parallel()
+	for _, tok := range []string{"thought", "</thought>", "<thought>", "thinking", "</thinking>", "---END CMD---"} {
+		if !isOrchestratedShellNoiseLine(tok) {
+			t.Errorf("expected %q to be recognized as noise line", tok)
+		}
+	}
+}
+

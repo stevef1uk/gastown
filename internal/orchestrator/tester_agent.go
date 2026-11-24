@@ -79,6 +79,22 @@ func PhaseShipsAutomatedTests(p DeliveryPhase) bool {
 		return false // "verify ok (no automated tests for this phase)" style stub
 	}
 
+	// File-existence only or shell-check only verification that invokes no language
+	// stack tool and no container test runner. When the phase also declares no test
+	// files, it is an asset/file delivery phase that ships no automated tests.
+	if !hasAnyStackTool(cmd) && !qaVerifyCommandReferencesDocker(cmd) {
+		hasTest := false
+		for _, f := range p.RequiredFiles {
+			if IsTestImplementPath(f) {
+				hasTest = true
+				break
+			}
+		}
+		if !hasTest {
+			return false
+		}
+	}
+
 	return true
 }
 
