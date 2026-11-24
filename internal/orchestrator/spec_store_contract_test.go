@@ -18,6 +18,38 @@ func TestExtractSpecMarkdownSection_store(t *testing.T) {
 	}
 }
 
+func TestExtractSpecMarkdownSection_subheadingsAndPartialWords(t *testing.T) {
+	doc := `# Plan
+
+### ta-5qb: taskboard/internal/store/postgres_integration_test.go
+Integration test bead notes
+
+## Integration contract
+
+Wiring order: config -> store -> app
+
+### API Routes
+- GET /api/health
+- POST /api/projects
+
+## Next Section
+Other info
+`
+	got := ExtractSpecMarkdownSection(doc, "Integration contract")
+	if !strings.Contains(got, "GET /api/health") {
+		t.Fatalf("expected GET /api/health in extracted section, got %q", got)
+	}
+	if !strings.Contains(got, "Wiring order") {
+		t.Fatalf("expected Wiring order in extracted section, got %q", got)
+	}
+	if strings.Contains(got, "Integration test bead notes") {
+		t.Fatalf("matched H3 bead header instead of H2 Integration contract section")
+	}
+	if strings.Contains(got, "Other info") {
+		t.Fatalf("bled into Next Section")
+	}
+}
+
 func TestFormatSpecSchemaContractBlock_schemaBead(t *testing.T) {
 	dir := t.TempDir()
 	rig := "mockrig"

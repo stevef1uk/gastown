@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// ExtractSpecMarkdownSection returns lines under a ## heading until the next ## heading.
+// ExtractSpecMarkdownSection returns lines under a ## heading until the next ## heading (or # heading).
 func ExtractSpecMarkdownSection(doc, heading string) string {
 	doc = strings.ReplaceAll(doc, "\r\n", "\n")
 	heading = strings.TrimSpace(heading)
@@ -13,18 +13,19 @@ func ExtractSpecMarkdownSection(doc, heading string) string {
 		return ""
 	}
 	var want []string
-	for _, line := range strings.Split(heading, " ") {
-		if t := strings.TrimSpace(line); t != "" {
+	for _, word := range strings.Split(heading, " ") {
+		if t := strings.TrimSpace(word); t != "" {
 			want = append(want, strings.ToLower(t))
 		}
 	}
 	lines := strings.Split(doc, "\n")
 	start := -1
 	for i, line := range lines {
-		if !strings.HasPrefix(strings.TrimSpace(line), "##") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "## ") && trimmed != "##" {
 			continue
 		}
-		h := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "##")))
+		h := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(trimmed, "##")))
 		if sectionHeadingMatches(h, want) {
 			start = i + 1
 			break
@@ -35,7 +36,8 @@ func ExtractSpecMarkdownSection(doc, heading string) string {
 	}
 	var out []string
 	for i := start; i < len(lines); i++ {
-		if strings.HasPrefix(strings.TrimSpace(lines[i]), "##") {
+		trimmed := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(trimmed, "## ") || strings.HasPrefix(trimmed, "# ") || trimmed == "##" || trimmed == "#" {
 			break
 		}
 		out = append(out, lines[i])
@@ -44,12 +46,15 @@ func ExtractSpecMarkdownSection(doc, heading string) string {
 }
 
 func sectionHeadingMatches(h string, want []string) bool {
+	if len(want) == 0 {
+		return false
+	}
 	for _, w := range want {
-		if w != "" && strings.Contains(h, w) {
-			return true
+		if w == "" || !strings.Contains(h, w) {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 // IsStorePackageBeadPath reports store-layer production or test beads.
