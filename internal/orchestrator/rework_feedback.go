@@ -513,7 +513,7 @@ func prepareTestReviewToImplementationFeedback(summary, raw string, v WorkflowVa
 
 func prepareContractMismatchToImplementationFeedback(summary, raw string, v WorkflowValidation) string {
 	var b strings.Builder
-	b.WriteString("Tester found a SPEC-conformance mismatch: the test suite is green, but its assertions encode behavior that contradicts SPEC.md. Fix the production code; do not edit or weaken the tests that exposed the mismatch.\n\n")
+	b.WriteString("Tester found a SPEC-conformance mismatch: the test suite is green, but its assertions encode behavior that contradicts SPEC.md. Fix the production code and update companion test assertions to conform strictly to SPEC.md; do not weaken or delete tests.\n\n")
 	if summary != "" {
 		b.WriteString("Tester summary: ")
 		b.WriteString(summary)
@@ -526,12 +526,12 @@ func prepareContractMismatchToImplementationFeedback(summary, raw string, v Work
 	layout := v.LayoutRootDir()
 	b.WriteString("\nPolecat recovery steps (contract_mismatch):\n")
 	b.WriteString("1. READ `SPEC.md` and each test file named in the tester summary. The summary must include a `SPEC:` clause quote, an `Assertion:` quote with file/line, and the `Production fix:` path; if any are missing, reply with `contract_mismatch` asking the tester for that trace instead of guessing.\n")
-	b.WriteString("2. EDIT only the production file named after `Production fix:`; use READ before EDIT. Do not change `SPEC.md`, `TEST_PLAN.md`, or the named test files for this repair.\n")
-	b.WriteString("3. Run the unchanged verification: `")
+	b.WriteString("2. EDIT the production file named after `Production fix:`, and update any companion test assertions named under `Implementation repair:` to match the SPEC requirement verbatim. Do not change `SPEC.md` or `TEST_PLAN.md` — both production code and test assertions must conform to SPEC.\n")
+	b.WriteString("3. Run verification: `")
 	b.WriteString(verify)
 	b.WriteString("` from `")
 	b.WriteString(layout)
-	b.WriteString("`. Green tests are expected after the source correction; do not rewrite assertions to match current behavior.\n")
+	b.WriteString("`. Green tests conforming to SPEC are expected after the correction; do not rewrite assertions to match non-conformant behavior.\n")
 	b.WriteString("4. Summarize the SPEC clause, the corrected production line, and the verification result, then `bd close` the reopened bead.\n")
 	if err := extractLastTestFailure(raw); err != "" {
 		b.WriteString("\nLast test output:\n")

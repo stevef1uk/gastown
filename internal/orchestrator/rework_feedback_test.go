@@ -27,7 +27,7 @@ func TestPrepareWorkflowReworkFeedback_contractMismatchRoute(t *testing.T) {
 		"test_review->implementation:contract_mismatch": "test_review_contract_mismatch_to_implementation",
 	}
 	got := PrepareWorkflowReworkFeedback("test_review", "implementation", summary, "", "contract_mismatch", v, routes)
-	for _, want := range []string{"SPEC-conformance mismatch", "do not edit or weaken the tests", "Production fix:", "Polecat recovery steps (contract_mismatch)"} {
+	for _, want := range []string{"SPEC-conformance mismatch", "do not weaken or delete tests", "Production fix:", "Polecat recovery steps (contract_mismatch)"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in feedback: %s", want, got)
 		}

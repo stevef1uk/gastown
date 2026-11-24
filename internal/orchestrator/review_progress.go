@@ -81,6 +81,11 @@ func (inst *WorkflowInstance) recordReviewFailure(state, phase, outcome string, 
 			delete(inst.ReviewRecoveryBudgetStarted, previous)
 		}
 	}
+	for previous := range inst.ContractMismatchFailures {
+		if strings.HasPrefix(previous, state+":") && previous != key {
+			delete(inst.ContractMismatchFailures, previous)
+		}
+	}
 	if IsCheckpointOutcome(outcome) {
 		return reviewFailureContinue
 	}
@@ -88,6 +93,17 @@ func (inst *WorkflowInstance) recordReviewFailure(state, phase, outcome string, 
 		delete(inst.ReviewFailures, key)
 		delete(inst.ReviewEscalations, key)
 		delete(inst.ReviewRecoveryBudgetStarted, key)
+		delete(inst.ContractMismatchFailures, key)
+		return reviewFailureContinue
+	}
+	if IsContractMismatchOutcome(outcome) {
+		if inst.ContractMismatchFailures == nil {
+			inst.ContractMismatchFailures = map[string]int{}
+		}
+		inst.ContractMismatchFailures[key]++
+		if inst.ContractMismatchFailures[key] >= contractMismatchReviewLimit {
+			return reviewFailurePause
+		}
 		return reviewFailureContinue
 	}
 	if inst.ReviewFailures == nil {
@@ -103,9 +119,6 @@ func (inst *WorkflowInstance) recordReviewFailure(state, phase, outcome string, 
 		inst.ReviewRecoveryBudgetStarted[key] = true
 	}
 	inst.ReviewFailures[key]++
-	if IsContractMismatchOutcome(outcome) && inst.ReviewFailures[key] >= contractMismatchReviewLimit {
-		return reviewFailurePause
-	}
 	if inst.ReviewFailures[key] < limit {
 		return reviewFailureContinue
 	}

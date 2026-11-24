@@ -801,7 +801,11 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		inst.Status = "paused"
 		key := fromState + ":" + reviewPhaseKey(activePhaseID)
 		if IsContractMismatchOutcome(outcome) {
-			inst.PauseReason = fmt.Sprintf("contract_mismatch repeated %d times in delivery phase %q after a source repair; the green tests contradict SPEC.md and the named production fix did not resolve it. Inspect the SPEC quote, assertion, and source evidence before resuming", inst.ReviewFailures[key], activePhaseID)
+			count := inst.ContractMismatchFailures[key]
+			if count == 0 {
+				count = inst.ReviewFailures[key]
+			}
+			inst.PauseReason = fmt.Sprintf("contract_mismatch repeated %d times in delivery phase %q after a source repair; the green tests contradict SPEC.md and the named production fix did not resolve it. Inspect the SPEC quote, assertion, and source evidence before resuming", count, activePhaseID)
 		} else {
 			inst.PauseReason = fmt.Sprintf("%s was rejected %d times in delivery phase %q, including after Mayor diagnosis/recovery; inspect the retained findings and fix before resuming", fromState, inst.ReviewFailures[key], activePhaseID)
 		}
@@ -1034,6 +1038,7 @@ func (m *Manager) ResetWorkflow(workflowID, toState string) (string, error) {
 	inst.PauseReason = ""
 	inst.ReviewProgress = nil
 	inst.ReviewFailures = nil
+	inst.ContractMismatchFailures = nil
 	inst.ReviewEscalations = nil
 	inst.ReviewRecoveryBudgetStarted = nil
 	inst.touchStateEnteredAt()

@@ -16,8 +16,27 @@ func TestRecordReviewFailure_contractMismatchPausesImmediatelyAfterRepeat(t *tes
 			t.Fatalf("attempt %d: action=%v want=%v", i+1, got, want)
 		}
 	}
-	if got := inst.ReviewFailures["test_review:phase-1"]; got != contractMismatchReviewLimit {
+	if got := inst.ContractMismatchFailures["test_review:phase-1"]; got != contractMismatchReviewLimit {
 		t.Fatalf("failures=%d want=%d", got, contractMismatchReviewLimit)
+	}
+}
+
+func TestRecordReviewFailure_priorGenericFailureDoesNotPrematurelyPauseContractMismatch(t *testing.T) {
+	inst := &WorkflowInstance{}
+	// Generic review failure (e.g. missing test file)
+	got := inst.recordReviewFailure("test_review", "phase-1", "failure", 3, "review_recovery")
+	if got != reviewFailureContinue {
+		t.Fatalf("generic failure: got %v want %v", got, reviewFailureContinue)
+	}
+	// First contract_mismatch should still allow 1 repair attempt (reviewFailureContinue)!
+	got = inst.recordReviewFailure("test_review", "phase-1", "contract_mismatch", 3, "review_recovery")
+	if got != reviewFailureContinue {
+		t.Fatalf("first contract_mismatch: got %v want %v", got, reviewFailureContinue)
+	}
+	// Second contract_mismatch pauses!
+	got = inst.recordReviewFailure("test_review", "phase-1", "contract_mismatch", 3, "review_recovery")
+	if got != reviewFailurePause {
+		t.Fatalf("second contract_mismatch: got %v want %v", got, reviewFailurePause)
 	}
 }
 

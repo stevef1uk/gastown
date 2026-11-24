@@ -10,7 +10,7 @@ import (
 
 func TestRigPipelineRoles_includesArchitectQAPolecat(t *testing.T) {
 	roles := rigPipelineRoles("testgt3")
-	if len(roles) != 3 {
+	if len(roles) != 5 {
 		t.Fatalf("got %d roles", len(roles))
 	}
 	seen := map[string]bool{}
@@ -20,7 +20,7 @@ func TestRigPipelineRoles_includesArchitectQAPolecat(t *testing.T) {
 			t.Fatalf("empty session for %s", r.label)
 		}
 	}
-	for _, want := range []string{"Architect", "QA", "Polecat"} {
+	for _, want := range []string{"Architect", "QA", "Polecat", "Planner", "Analyst"} {
 		if !seen[want] {
 			t.Fatalf("missing label %s", want)
 		}

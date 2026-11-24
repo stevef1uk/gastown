@@ -119,6 +119,7 @@ type WorkflowInstance struct {
 	TestPlanFailures            int                       `json:"test_plan_failures,omitempty"`
 	ReviewProgress              map[string]ReviewProgress `json:"review_progress,omitempty"`
 	ReviewFailures              map[string]int            `json:"review_failures,omitempty"`
+	ContractMismatchFailures    map[string]int            `json:"contract_mismatch_failures,omitempty"`
 	ReviewEscalations           map[string]int            `json:"review_escalations,omitempty"`
 	ReviewRecoveryBudgetStarted map[string]bool           `json:"review_recovery_budget_started,omitempty"`
 	VerificationErrors          map[string]int            `json:"verification_errors,omitempty"`
