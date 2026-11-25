@@ -38,6 +38,9 @@ func TestFetchTask_skipsPaused(t *testing.T) {
 
 func TestResumeWorkflow(t *testing.T) {
 	m, id := loadTestManager(t, designFlowTemplate())
+	m.instances[id].ReviewFailures = map[string]int{"qa_review:phase-1": 3}
+	m.instances[id].ReviewEscalations = map[string]int{"qa_review:phase-1": 1}
+	m.instances[id].ReviewRecoveryBudgetStarted = map[string]bool{"qa_review:phase-1": true}
 	if _, err := m.PauseWorkflow(id); err != nil {
 		t.Fatal(err)
 	}
@@ -46,6 +49,10 @@ func TestResumeWorkflow(t *testing.T) {
 	}
 	if m.instances[id].Status != "running" {
 		t.Fatalf("status = %q", m.instances[id].Status)
+	}
+	if m.instances[id].ReviewFailures != nil || m.instances[id].ReviewEscalations != nil || m.instances[id].ReviewRecoveryBudgetStarted != nil {
+		t.Fatalf("expected review failure tracking to be cleared on resume: failures=%v escalations=%v recovery_started=%v",
+			m.instances[id].ReviewFailures, m.instances[id].ReviewEscalations, m.instances[id].ReviewRecoveryBudgetStarted)
 	}
 	task, err := m.FetchTask("mockrig/architect")
 	if err != nil || task == nil {

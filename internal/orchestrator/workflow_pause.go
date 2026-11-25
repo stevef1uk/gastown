@@ -106,6 +106,11 @@ func (m *Manager) ResumeWorkflow(workflowID string) error {
 	if inst.ReviewProgress != nil {
 		delete(inst.ReviewProgress, inst.CurrentState)
 	}
+	inst.ReviewFailures = nil
+	inst.ContractMismatchFailures = nil
+	inst.ReviewEscalations = nil
+	inst.ReviewRecoveryBudgetStarted = nil
+	inst.VerificationErrors = nil
 	if err := m.persistLocked(); err != nil {
 		return fmt.Errorf("persist instances: %w", err)
 	}

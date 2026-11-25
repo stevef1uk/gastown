@@ -193,6 +193,7 @@ states:
     instructions: |
       Diagnose repeated review rejection from the retained findings and authoritative rig artifacts. Select the responsible owner and send one targeted repair with concrete evidence; do not bounce the work back unchanged.
     hooks:
+      require_explicit_outcome: true
       max_cmd_turns: 12
       cmd_guard: plan_review
       cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, bd_list_limit, unwrap_bash_lc]

@@ -86,6 +86,25 @@ func TestTryAutoReviewRecovery(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("require explicit outcome disables auto recovery", func(t *testing.T) {
+		runner := &stateRunner{
+			hooks: orchestrator.StateHooks{
+				RequireExplicitOutcome: true,
+			},
+			task: &orchestrator.Task{
+				State: "review_recovery",
+				PendingRework: &orchestrator.WorkflowRework{
+					FromState: "qa_review",
+					Summary:   "Phase verify failed",
+				},
+				AllowedOutcomes: []string{"implementation_rework", "pause"},
+			},
+		}
+		if _, _, auto := runner.tryAutoOutcome(); auto {
+			t.Fatal("tryAutoOutcome() should return auto=false when RequireExplicitOutcome=true")
+		}
+	})
 }
 
 func TestRejectReviewRecoverySpuriousPause(t *testing.T) {
