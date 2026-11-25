@@ -455,7 +455,7 @@ func formatUnitTestGuidanceForBead(townRoot, rig, beadPath string, v WorkflowVal
 		}
 		msg += "Create tests with **WRITE:** or **EDIT:** in this session — do not fail because the file is missing; write it.\n"
 		if strings.Contains(filepath.ToSlash(beadPath), "internal/store/store.go") {
-			msg += "SQLite store tests must use a **fresh DB per test** (`:memory:` or `filepath.Join(t.TempDir(), \"test.db\")` passed into `OpenDB`) — never reuse `./links.db` from prior runs.\n"
+			msg += "SQLite store tests must use a **fresh DB per test** (`:memory:` or `filepath.Join(t.TempDir(), \"test.db\")` passed into store constructor/initializer) — never reuse a shared database file from prior runs.\n"
 		}
 		return strings.TrimSpace(msg)
 	}

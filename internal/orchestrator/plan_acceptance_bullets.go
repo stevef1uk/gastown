@@ -37,7 +37,7 @@ func planAcceptanceBullets(beadPath string, v WorkflowValidation) []string {
 		}
 		if strings.Contains(beadPath, "internal/store/store.go") {
 			common = append(common,
-				"Store methods match SPEC (`List`/`Create`/`Delete` with `context.Context`); tests use `:memory:` + `InitSchema` — not a shared `./links.db`.",
+				"Store methods match SPEC and architecture contracts with `context.Context`; tests use isolated temporary databases (e.g. `t.TempDir()` or `:memory:`) — not a shared database across test runs.",
 			)
 		}
 	}
