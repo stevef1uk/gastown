@@ -56,3 +56,18 @@ func TestQACommandMutatesLayoutSource_blocksInPlaceSed(t *testing.T) {
 		}
 	}
 }
+
+func TestQACommandMutatesLayoutSource_allowsChainedVerifyWithNpmInstall(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot: "finally",
+		RequiredFiles: []string{
+			"finally/frontend/components/PortfolioSummary.tsx",
+			"finally/test/portfolio-visualisation-trading.spec.ts",
+		},
+	}
+	cmd := `cd testgt4/mayor/rig && (cd finally/frontend && npm install --ignore-scripts) && (cd finally/frontend && npm run build) && test -f finally/frontend/components/PortfolioSummary.tsx && test -f finally/test/portfolio-visualisation-trading.spec.ts`
+	if path, ok := QACommandMutatesLayoutSource(cmd, v); ok {
+		t.Fatalf("expected verify command with npm install not to be blocked as a write, but blocked on %q", path)
+	}
+}

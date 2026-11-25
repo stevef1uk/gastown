@@ -14,7 +14,7 @@ set -euo pipefail
 # ==============================================================================
 
 GT_ROOT="${GT_ROOT:-/home/stevef/gt}"
-RIG_NAME="${1:-spec-consistency-test}"
+RIG_NAME="${1:-spec_consistency_test}"
 
 if [[ "${RIG_NAME}" == "testgt4" ]]; then
     echo "ERROR: Refusing to use 'testgt4' as test rig. An active workflow is running there." >&2
@@ -75,8 +75,8 @@ fi
 
 echo "=== [3/4] Registering rig in Gas Town ==="
 if ! grep -q "\"${RIG_NAME}\"" "${GT_ROOT}/settings/rigs.json" 2>/dev/null; then
-    echo "Registering rig with: gt rig add ${RIG_NAME}"
-    GT_ROOT="${GT_ROOT}" gt rig add "${RIG_NAME}" --skip-spec-index 2>/dev/null || true
+    echo "Registering rig with: gt rig add ${RIG_NAME} --adopt --force"
+    GT_ROOT="${GT_ROOT}" gt rig add "${RIG_NAME}" --adopt --force 2>/dev/null || true
 fi
 
 echo "=== [4/4] Setup complete! ==="
@@ -99,5 +99,3 @@ echo "  GT_ROOT=${GT_ROOT} gt mayor workflow start rig-flow --rig ${RIG_NAME}"
 echo ""
 echo "To inspect progress:"
 echo "  GT_ROOT=${GT_ROOT} gt mayor workflow status"
-EOF
-chmod +x scripts/test-spec-consistency-flow.sh

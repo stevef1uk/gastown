@@ -36,19 +36,34 @@ func isQAAllowedDocPath(rel string) bool {
 	return false
 }
 
+var qaCmdSplitRE = regexp.MustCompile(`(?:\s*(?:&&|\|\||[;&\n])\s*|\(|\))`)
+
 func qaCommandWritesPath(cmd, relPath string) bool {
 	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
 	if relPath == "" {
 		return false
 	}
-	if !commandMentionsPath(cmd, relPath) {
-		return false
+	for _, stmt := range qaCmdSplitRE.Split(cmd, -1) {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		if !commandMentionsPath(stmt, relPath) {
+			continue
+		}
+		if statementWritesPath(stmt, relPath) {
+			return true
+		}
 	}
-	lower := strings.ToLower(cmd)
+	return false
+}
+
+func statementWritesPath(stmt, relPath string) bool {
+	lower := strings.ToLower(stmt)
 	writeMarkers := []string{
 		"sed -i", "sed -i'", `sed -i"`, "sed -i ",
 		"cat >", "cat>>", " tee ", "patch ", "patch -p",
-		"mv ", "cp ", "touch ", "install ", "truncate ",
+		"mv ", "cp ", "touch ", "truncate ",
 		"sponge ", "perl -pi", "perl -pe",
 	}
 	for _, m := range writeMarkers {
@@ -56,7 +71,11 @@ func qaCommandWritesPath(cmd, relPath string) bool {
 			return true
 		}
 	}
-	for _, m := range qaShellRedirectRE.FindAllStringSubmatch(cmd, -1) {
+	// Check for coreutils install command (avoid false positives on npm/pnpm/yarn/pip/brew/apt install)
+	if strings.HasPrefix(lower, "install ") || strings.Contains(lower, "/install ") {
+		return true
+	}
+	for _, m := range qaShellRedirectRE.FindAllStringSubmatch(stmt, -1) {
 		if len(m) < 2 {
 			continue
 		}
