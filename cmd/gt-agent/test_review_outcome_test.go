@@ -99,6 +99,38 @@ func TestTestReviewRequiresCompleteVerifyChain(t *testing.T) {
 	}
 }
 
+func TestTestReviewVerifyCommandMatches_acceptsStderrAndFlags(t *testing.T) {
+	vGo := orchestrator.WorkflowValidation{
+		LayoutRoot:      "taskboard",
+		TestRunner:      "go",
+		QAVerifyCommand: "cd taskboard && go test ./...",
+	}
+	for _, cmd := range []string{
+		"cd taskboard && go test ./...",
+		"cd mockrig/mayor/rig/taskboard && go test ./... 2>&1",
+		"cd taskboard && go test -v ./...",
+		"cd taskboard && go test -v ./... 2>&1",
+	} {
+		if !testReviewVerifyCommandMatches(cmd, vGo) {
+			t.Errorf("expected Go test command to match: %q", cmd)
+		}
+	}
+
+	vPy := orchestrator.WorkflowValidation{
+		LayoutRoot:      "sample",
+		TestRunner:      "pytest",
+		QAVerifyCommand: "cd sample && pytest",
+	}
+	for _, cmd := range []string{
+		"cd sample && pytest",
+		"cd mockrig/mayor/rig/sample && pytest 2>&1",
+	} {
+		if !testReviewVerifyCommandMatches(cmd, vPy) {
+			t.Errorf("expected Python test command to match: %q", cmd)
+		}
+	}
+}
+
 func TestTestReviewMaskedShellSuccessDoesNotPass(t *testing.T) {
 	town, rig := t.TempDir(), "mockrig"
 	project := filepath.Join(rigMayorRigDir(town, rig), "linkshelf")

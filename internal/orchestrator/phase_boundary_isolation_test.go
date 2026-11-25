@@ -73,3 +73,61 @@ func TestEnsurePhaseBoundaryIsolation_stashesFutureFilesAndRestoresWhenActive(t 
 		t.Fatalf("expected app/kanban_test.go restored on disk: %v", err)
 	}
 }
+
+func TestEnsurePhaseBoundaryIsolation_stashesCompanionTestOfFuturePhase(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "testrig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+
+	// Phase 1 (core): app/core.go
+	// Phase 2 (api): app/api.go
+	// On disk: app/api_test.go is created, but NOT listed in RequiredFiles
+	v := WorkflowValidation{
+		LayoutRoot: "app",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "phase-1", RequiredFiles: []string{"app/core.go"}},
+			{ID: "phase-2", RequiredFiles: []string{"app/api.go"}},
+		},
+		ActivePhaseIDField: "phase-1",
+	}
+
+	appDir := filepath.Join(rigDir, "app")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, f := range []string{"app/core.go", "app/api.go", "app/api_test.go"} {
+		p := filepath.Join(rigDir, filepath.FromSlash(f))
+		if err := os.WriteFile(p, []byte("// "+f), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// In phase-1, both app/api.go (required by future phase) and app/api_test.go (correlated test of future phase) must be stashed
+	isolated, _, err := EnsurePhaseBoundaryIsolation(dir, rig, v)
+	if err != nil {
+		t.Fatalf("EnsurePhaseBoundaryIsolation: %v", err)
+	}
+	if len(isolated) != 2 {
+		t.Fatalf("expected 2 files isolated (app/api.go and app/api_test.go), got %v", isolated)
+	}
+
+	// Verify app/api_test.go is moved to stash
+	if _, err := os.Stat(filepath.Join(rigDir, "app/api_test.go")); !os.IsNotExist(err) {
+		t.Fatal("expected app/api_test.go to be moved to stash")
+	}
+
+	// Advance to phase-2: both should be restored
+	v.ActivePhaseIDField = "phase-2"
+	_, restored, err := EnsurePhaseBoundaryIsolation(dir, rig, v)
+	if err != nil {
+		t.Fatalf("EnsurePhaseBoundaryIsolation: %v", err)
+	}
+	if len(restored) != 2 {
+		t.Fatalf("expected 2 files restored, got %v", restored)
+	}
+	if _, err := os.Stat(filepath.Join(rigDir, "app/api_test.go")); err != nil {
+		t.Fatalf("expected app/api_test.go restored on disk: %v", err)
+	}
+}

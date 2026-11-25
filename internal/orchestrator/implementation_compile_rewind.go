@@ -87,6 +87,15 @@ func extractGoTestDiagnosticPaths(output string, v WorkflowValidation) []string 
 	return paths
 }
 
+func hasGoTestFailureMarker(output string) bool {
+	return strings.Contains(output, "--- FAIL:") ||
+		strings.Contains(output, "FAIL\t") ||
+		strings.Contains(output, "FAIL\n") ||
+		strings.Contains(output, "[build failed]") ||
+		strings.Contains(output, "[setup failed]") ||
+		strings.Contains(output, "FAIL:")
+}
+
 func completedPhaseGoTestFailure(rigDir string, v WorkflowValidation, failureOutput string) (int, []string, string) {
 	active := v.ActivePhaseIndex()
 	if !WorkflowUsesGo(v) || !v.HasPhasedDelivery() || active <= 0 {
@@ -97,29 +106,34 @@ func completedPhaseGoTestFailure(rigDir string, v WorkflowValidation, failureOut
 		return -1, nil, ""
 	}
 
-	// First: evaluate failureOutput (from agent summary / feedback)
-	if strings.TrimSpace(failureOutput) != "" {
-		diagnosticPaths := extractGoTestDiagnosticPaths(failureOutput, v)
-		if len(diagnosticPaths) > 0 {
-			if idx, paths := earlierPhaseDiagnosticPaths(v, diagnosticPaths); idx >= 0 {
-				return idx, paths, failureOutput
-			}
-		}
-	}
-
-	// Second: run go test ./... to detect any failing tests in completed phases
+	// First: execute go test ./... to check actual test status in the module.
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", "test", "./...")
 	cmd.Dir = moduleDir
 	outputBytes, err := cmd.CombinedOutput()
 	if err == nil {
+		// All tests pass in the workspace! Never rewind a completed phase when tests pass.
 		return -1, nil, ""
 	}
+
+	// Tests failed. Check if an earlier phase's files are responsible.
 	output := string(outputBytes)
 	diagnosticPaths := extractGoTestDiagnosticPaths(output, v)
-	idx, paths := earlierPhaseDiagnosticPaths(v, diagnosticPaths)
-	return idx, paths, output
+	if idx, paths := earlierPhaseDiagnosticPaths(v, diagnosticPaths); idx >= 0 {
+		return idx, paths, output
+	}
+
+	// If go test failed but didn't identify earlier files, check failureOutput only
+	// if it contains genuine Go test failure markers.
+	if strings.TrimSpace(failureOutput) != "" && hasGoTestFailureMarker(failureOutput) {
+		diagPaths := extractGoTestDiagnosticPaths(failureOutput, v)
+		if idx, paths := earlierPhaseDiagnosticPaths(v, diagPaths); idx >= 0 {
+			return idx, paths, failureOutput
+		}
+	}
+
+	return -1, nil, ""
 }
 
 func rewindCompletedPhaseVerificationFailure(townRoot, rig string, v WorkflowValidation, failureOutput string) (string, error) {

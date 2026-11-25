@@ -186,8 +186,14 @@ func testReviewVerifyCommandMatches(cmd string, v orchestrator.WorkflowValidatio
 	if cleanedCmd == cleanedVerify {
 		return true
 	}
-	if orchestrator.WorkflowUsesGo(v) && !strings.Contains(cmd, "&") && !strings.Contains(cmd, "|| true") && !strings.Contains(cmd, "; true") {
+	cleanedWithoutRedirect := strings.ReplaceAll(cleanedCmd, "2>&1", "")
+	if orchestrator.WorkflowUsesGo(v) && !strings.Contains(cleanedWithoutRedirect, "&") && !strings.Contains(cmd, "|| true") && !strings.Contains(cmd, "; true") {
 		if goVerifyCommandMatches(cmd, verify, v) {
+			return true
+		}
+	}
+	if orchestrator.WorkflowUsesPython(v) && !strings.Contains(cleanedWithoutRedirect, "&") && !strings.Contains(cmd, "|| true") && !strings.Contains(cmd, "; true") {
+		if pythonVerifyCommandMatches(cmd, verify, v) {
 			return true
 		}
 	}
@@ -369,6 +375,31 @@ func goVerifyCommandMatches(cmd, verify string, v orchestrator.WorkflowValidatio
 			}
 			if !strings.Contains(lower, "go build") {
 				return false
+			}
+			continue
+		}
+		if strings.HasPrefix(step, "go test") {
+			if !strings.Contains(lower, "go test") {
+				return false
+			}
+			target := strings.TrimSpace(strings.TrimPrefix(step, "go test"))
+			if target != "" {
+				if strings.Contains(lower, "./...") {
+					continue
+				}
+				allFound := true
+				for _, pkg := range strings.Fields(target) {
+					if strings.HasPrefix(pkg, "-") {
+						continue
+					}
+					if !strings.Contains(lower, pkg) {
+						allFound = false
+						break
+					}
+				}
+				if !allFound {
+					return false
+				}
 			}
 			continue
 		}

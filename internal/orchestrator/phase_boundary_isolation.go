@@ -102,6 +102,79 @@ func EnsurePhaseBoundaryIsolation(townRoot, rig string, v WorkflowValidation) (i
 		}
 	}
 
+	// 4. Stash companion test files or unlisted files whose correlated source belongs to a future phase.
+	_ = filepath.WalkDir(rigDir, func(path string, d fs.DirEntry, werr error) error {
+		if werr != nil {
+			return nil
+		}
+		name := d.Name()
+		if d.IsDir() {
+			if name == ".git" || name == ".gastown" || name == "node_modules" || name == "vendor" || name == ".venv" || name == "venv" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, rerr := filepath.Rel(rigDir, path)
+		if rerr != nil {
+			return nil
+		}
+		norm := filepath.ToSlash(rel)
+		if !IsTestImplementPath(norm) {
+			return nil
+		}
+		if currentAndPastFiles[norm] {
+			return nil
+		}
+		if pIdx := v.FindDeliveryPhaseForFile(norm); pIdx >= 0 && pIdx <= activeIdx {
+			return nil
+		}
+		pIdx := -1
+		if idx := v.FindDeliveryPhaseForFile(norm); idx >= 0 {
+			pIdx = idx
+		} else if strings.HasSuffix(norm, ".go") {
+			srcPath := SourcePathForCorrelatedTest(norm, v.LayoutRoot)
+			if srcPath != "" {
+				pIdx = v.FindDeliveryPhaseForFile(srcPath)
+			}
+		} else if strings.HasSuffix(norm, ".py") {
+			for i, p := range v.DeliveryPhases {
+				for _, req := range p.RequiredFiles {
+					if strings.HasSuffix(req, ".py") && !IsTestImplementPath(req) {
+						for _, candidate := range correlatedTestCandidates(req, v) {
+							if candidate == norm {
+								pIdx = i
+								break
+							}
+						}
+					}
+					if pIdx >= 0 {
+						break
+					}
+				}
+				if pIdx >= 0 {
+					break
+				}
+			}
+		}
+		if pIdx > activeIdx && pIdx < len(v.DeliveryPhases) {
+			futurePhase := v.DeliveryPhases[pIdx]
+			dest := filepath.Join(stashBase, futurePhase.ID, filepath.FromSlash(norm))
+			if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+				return nil
+			}
+			if err := os.Rename(path, dest); err != nil {
+				data, readErr := os.ReadFile(path)
+				if readErr == nil {
+					if writeErr := os.WriteFile(dest, data, 0644); writeErr == nil {
+						_ = os.Remove(path)
+					}
+				}
+			}
+			isolated = append(isolated, norm)
+		}
+		return nil
+	})
+
 	return isolated, restored, nil
 }
 

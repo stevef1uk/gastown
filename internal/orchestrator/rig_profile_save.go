@@ -137,7 +137,11 @@ func SetRigActivePhase(townRoot, rig, phaseID string) error {
 		return fmt.Errorf("unknown phase id %q (see delivery_phases in %s)", phaseID, path)
 	}
 	env.Validation.ActivePhaseIDField = phaseID
-	return SaveRigWorkflowProfileEnvelope(townRoot, rig, env)
+	if err := SaveRigWorkflowProfileEnvelope(townRoot, rig, env); err != nil {
+		return err
+	}
+	_, _, _ = EnsurePhaseBoundaryIsolation(townRoot, rig, env.Validation)
+	return nil
 }
 
 // SetRigRewoundFromPhase sets rewound_from_phase_id in workflow-profile.json.

@@ -164,3 +164,26 @@ func TestImplementationFailureRewindsExistingBrokenDependency(t *testing.T) {
 		t.Fatalf("same-state dependency repair lost its compiler feedback: %+v", rework)
 	}
 }
+
+func TestCompletedPhaseGoTestFailure_passingTestsDoNotRewindOnProse(t *testing.T) {
+	town, rig, v := compileRewindFixture(t)
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+
+	// Fix the handler in main.go so it compiles and passes tests
+	mainPath := filepath.Join(rigDir, "demo/cmd/server/main.go")
+	source, err := os.ReadFile(mainPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mainPath, []byte(strings.ReplaceAll(string(source), "MissingHandler", "Handler")), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Active phase is "browser", completed is "service"
+	// Provide prose mentioning service.go without any actual test failure
+	proseSummary := "The phase verify is green, but please check demo/internal/service/service.go"
+	idx, paths, _ := completedPhaseGoTestFailure(rigDir, v, proseSummary)
+	if idx != -1 || len(paths) != 0 {
+		t.Fatalf("passing tests must never rewind on prose mentioning earlier files: idx=%d paths=%v", idx, paths)
+	}
+}
