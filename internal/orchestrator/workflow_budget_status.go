@@ -101,6 +101,9 @@ func CheckWorkflowDollarBudget(townRoot, rig, workflowID string) error {
 	if err != nil {
 		return err
 	}
+	if budget.DollarLimitMicros > rigLimit {
+		rigLimit = budget.DollarLimitMicros
+	}
 	endpoint, err := WorkflowBudgetStatusEndpoint(townRoot)
 	if err != nil {
 		return err
