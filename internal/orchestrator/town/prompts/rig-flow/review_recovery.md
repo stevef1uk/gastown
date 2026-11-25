@@ -30,6 +30,8 @@ and route one precise repair to the responsible workflow owner.
 
 For a `contract_mismatch` pause, first verify the retained `SPEC:`, `Assertion:`, and `Production fix:` markers. Route to `implementation_rework` so Polecat updates both the production code and the cited test assertions to conform strictly to the quoted SPEC clause. If the assertion itself is authoritative and SPEC is wrong (or the markers are missing), choose `architect_rework` or `pause`; do not send the same source repair back unchanged.
 
+Completed delivery phases (`{{completed_phase_ids}}`) are already accepted and closed; do not demand new beads, test re-planning, or source modifications for completed phases. Only the active phase (`{{active_phase_id}}`) is in scope for implementation and bead assignments. If prior review findings incorrectly demand bead ownership or changes for earlier completed phases, route to `tester_rework` or `implementation_rework` with clear guidance to focus strictly on the active phase.
+
 Do not edit implementation code or silently change SPEC requirements. Do not
 reopen unrelated beads or send the workflow to a role that cannot make the named
 correction. If the planner created a plan for a different project, identify the

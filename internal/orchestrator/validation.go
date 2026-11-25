@@ -1587,6 +1587,12 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		outOfScopePhaseIDsStr = "none (all phases in scope)"
 	}
 
+	completedPhaseIDs := v.CompletedPhaseIDs()
+	completedPhaseIDsStr := strings.Join(completedPhaseIDs, ", ")
+	if len(completedPhaseIDs) == 0 {
+		completedPhaseIDsStr = "none"
+	}
+
 	return map[string]string{
 		"layout_root":                     v.LayoutRoot,
 		"bead_title_contains":             v.BeadTitleContains,
@@ -1598,6 +1604,7 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"all_required_files":              strings.Join(allFiles, ", "),
 		"active_phase_id":                 activeID,
 		"active_phase_title":              activeTitle,
+		"completed_phase_ids":             completedPhaseIDsStr,
 		"delivery_phase_count":            fmt.Sprintf("%d", len(v.DeliveryPhases)),
 		"all_delivery_phase_ids":          allPhaseIDsStr,
 		"test_plan_phase_ids":             strings.Join(testPhaseIDs, ", "),

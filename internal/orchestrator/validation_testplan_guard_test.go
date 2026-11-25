@@ -143,4 +143,13 @@ func TestPromptVars_ExcludesSetupOnlyFromTestValidation(t *testing.T) {
 	if strings.Contains(got, "python-setup") {
 		t.Errorf("test_validation_phase_ids should exclude setup-only active phase, got %q", got)
 	}
+	if vars["completed_phase_ids"] != "none" {
+		t.Errorf("expected completed_phase_ids 'none', got %q", vars["completed_phase_ids"])
+	}
+
+	v.CompletedPhaseIDsField = []string{"core", "setup"}
+	vars2 := v.PromptVars()
+	if vars2["completed_phase_ids"] != "core, setup" {
+		t.Errorf("expected completed_phase_ids 'core, setup', got %q", vars2["completed_phase_ids"])
+	}
 }
