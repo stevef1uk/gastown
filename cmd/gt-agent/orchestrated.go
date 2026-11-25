@@ -2015,6 +2015,14 @@ func validateSpecReviewCommand(cmd, rig string) error {
 	return fmt.Errorf("spec review may only read REQUIREMENTS.md and SPEC.md")
 }
 
+func stripStderrRedirections(s string) string {
+	s = strings.ReplaceAll(s, "2>&1", "")
+	s = strings.ReplaceAll(s, "2>/dev/null", "")
+	s = strings.ReplaceAll(s, "&>/dev/null", "")
+	s = strings.ReplaceAll(s, "2>&-", "")
+	return s
+}
+
 // validateDesignCommand blocks architect scope creep before shell execution.
 func validateDesignCommand(cmd, rig string) error {
 	lower := strings.ToLower(cmd)
@@ -2046,7 +2054,8 @@ func validateDesignCommand(cmd, rig string) error {
 	if idx := strings.IndexByte(lower, '\n'); idx >= 0 {
 		firstLine = lower[:idx]
 	}
-	if strings.Contains(firstLine, ">") {
+	cleanFirstLine := stripStderrRedirections(firstLine)
+	if strings.Contains(cleanFirstLine, ">") {
 		if strings.Contains(firstLine, "architecture.md") {
 			return nil
 		}
@@ -2068,7 +2077,8 @@ func isPlanningReadOnlyCmd(cmd string) bool {
 	if isBeadCreateCommand(cmd) || isBeadDeleteCommand(cmd) || isBdListOpenCommand(cmd) || strings.Contains(lower, "bd show") {
 		return true
 	}
-	if strings.Contains(lower, ">") && !strings.Contains(lower, "plan.md") {
+	cleanLower := stripStderrRedirections(lower)
+	if strings.Contains(cleanLower, ">") && !strings.Contains(cleanLower, "plan.md") {
 		return false
 	}
 	readPrefixes := []string{"head ", "tail ", "cat ", "wc ", "ls ", "stat ", "test ", "grep ", "less ", "more ", "find ", "export ", "cd "}
