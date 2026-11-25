@@ -83,6 +83,7 @@ func TestNodeBuildGateProblems(t *testing.T) {
 		{"wrong-project", "cd workspace/api && npm run build", true},
 		{"echo-is-not-build", "echo 'npm run build'", true},
 		{"npm", "cd workspace/client && npm run build", false},
+		{"subshell-compound", "(cd workspace/client && npm install --ignore-scripts) && (cd workspace/client && npm run build)", false},
 		{"pnpm", "cd workspace/client && pnpm build", false},
 		{"yarn", "cd workspace/client && yarn build", false},
 		{"container", "cd workspace && docker compose build", false},

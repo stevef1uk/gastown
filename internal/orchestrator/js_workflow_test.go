@@ -147,8 +147,23 @@ func TestWorkflowUsesNodeJS(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "nested layout root tsx required files",
+			v:    WorkflowValidation{LayoutRoot: "finally", RequiredFiles: []string{"finally/frontend/components/ChatAssistant.tsx"}},
+			want: true,
+		},
+		{
 			name: "npm in qa command",
 			v:    WorkflowValidation{QAVerifyCommand: "cd frontend && npm test"},
+			want: true,
+		},
+		{
+			name: "npm run build in qa command",
+			v:    WorkflowValidation{QAVerifyCommand: "(cd finally/frontend && npm run build) && pytest"},
+			want: true,
+		},
+		{
+			name: "union required files has package.json for multi-phase",
+			v:    WorkflowValidation{RequiredFiles: []string{"finally/backend/app/ai/llm.py"}, DeliveryPhases: []DeliveryPhase{{ID: "init", RequiredFiles: []string{"finally/frontend/package.json"}}}},
 			want: true,
 		},
 		{

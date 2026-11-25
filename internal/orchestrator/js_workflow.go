@@ -74,9 +74,26 @@ func WorkflowUsesNodeJS(v WorkflowValidation) bool {
 	hasNodeCommand := false
 	hasFrontendTypeScript := false
 
-	// Check required files for project infrastructure
-	for _, f := range v.RequiredFiles {
-		f = strings.ToLower(strings.TrimSpace(f))
+	// Check required files across active phase and all delivery phases
+	files := v.UnionRequiredFiles()
+	if len(files) == 0 {
+		files = v.RequiredFiles
+	} else if len(v.RequiredFiles) > 0 {
+		for _, f := range v.RequiredFiles {
+			if !containsString(files, f) {
+				files = append(files, f)
+			}
+		}
+	}
+
+	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
+
+	for _, f := range files {
+		f = filepath.ToSlash(strings.ToLower(strings.TrimSpace(f)))
+		rel := f
+		if layout != "" && strings.HasPrefix(rel, layout+"/") {
+			rel = strings.TrimPrefix(rel, layout+"/")
+		}
 		if strings.HasSuffix(f, "package.json") || f == "package.json" {
 			hasPackageJSON = true
 		}
@@ -84,19 +101,45 @@ func WorkflowUsesNodeJS(v WorkflowValidation) bool {
 			hasTSConfig = true
 		}
 		// Frontend TypeScript/React files in app/frontend directory indicate a Node.js project
-		if (strings.HasSuffix(f, ".ts") || strings.HasSuffix(f, ".tsx")) &&
-			(strings.HasPrefix(f, "frontend/") || strings.HasPrefix(f, "app/") || strings.HasPrefix(f, "src/")) {
+		if (strings.HasSuffix(f, ".ts") || strings.HasSuffix(f, ".tsx") || strings.HasSuffix(f, ".js") || strings.HasSuffix(f, ".jsx")) &&
+			(strings.HasPrefix(rel, "frontend/") || strings.HasPrefix(rel, "app/") || strings.HasPrefix(rel, "src/") ||
+				strings.Contains(f, "/frontend/") || strings.Contains(f, "/app/")) {
 			hasFrontendTypeScript = true
 		}
 	}
 
+	for _, p := range v.DeliveryPhases {
+		for _, f := range p.RequiredFiles {
+			f = filepath.ToSlash(strings.ToLower(strings.TrimSpace(f)))
+			if strings.HasSuffix(f, "package.json") || f == "package.json" {
+				hasPackageJSON = true
+			}
+			if strings.HasSuffix(f, "tsconfig.json") {
+				hasTSConfig = true
+			}
+		}
+	}
+
 	// Check verify commands for explicit npm/pnpm/yarn commands (not just npx playwright)
-	q := strings.ToLower(strings.TrimSpace(v.QAVerifyCommand))
-	if strings.Contains(q, "npm install") || strings.Contains(q, "npm test") ||
-		strings.Contains(q, "npm run test") || strings.Contains(q, "yarn install") ||
-		strings.Contains(q, "yarn test") || strings.Contains(q, "pnpm install") ||
-		strings.Contains(q, "pnpm test") {
+	checkCmd := func(q string) bool {
+		q = strings.ToLower(strings.TrimSpace(q))
+		return strings.Contains(q, "npm install") || strings.Contains(q, "npm test") ||
+			strings.Contains(q, "npm run") || strings.Contains(q, "npm ci") ||
+			strings.Contains(q, "yarn install") || strings.Contains(q, "yarn test") ||
+			strings.Contains(q, "yarn run") || strings.Contains(q, "pnpm install") ||
+			strings.Contains(q, "pnpm test") || strings.Contains(q, "pnpm run") ||
+			strings.Contains(q, "next build") || strings.Contains(q, "vite build")
+	}
+
+	if checkCmd(v.QAVerifyCommand) {
 		hasNodeCommand = true
+	} else {
+		for _, p := range v.DeliveryPhases {
+			if checkCmd(p.QAVerifyCommand) {
+				hasNodeCommand = true
+				break
+			}
+		}
 	}
 
 	// A Node.js workflow requires explicit project infrastructure

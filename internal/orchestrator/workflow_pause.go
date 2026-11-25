@@ -90,7 +90,10 @@ func (m *Manager) ResumeWorkflow(workflowID string) error {
 		}
 	}
 	resumeSummary := ""
-	if inst.PendingRework != nil && inst.CurrentState == "planning" &&
+	if inst.PendingRework != nil && inst.CurrentState == "design" {
+		inst.PendingRework = nil
+		resumeSummary = "cleared superseded design rework feedback on explicit resume"
+	} else if inst.PendingRework != nil && inst.CurrentState == "planning" &&
 		inst.PendingRework.FromState == "planning" && inst.PendingRework.Outcome == "timeout" {
 		enteredAt, err := time.Parse(time.RFC3339, inst.StateEnteredAt)
 		if err == nil {

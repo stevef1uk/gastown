@@ -125,17 +125,28 @@ func nodeBuildGateProblems(v WorkflowValidation) []string {
 func hasNodeProjectBuildGate(command, root string) bool {
 	cwd := "."
 	for _, part := range verifyCommandSeparatorRE.Split(command, -1) {
-		part = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(part), "("))
+		part = strings.TrimSpace(part)
+		hasSubshell := strings.HasPrefix(part, "(")
+		part = strings.TrimSpace(strings.TrimLeft(part, "("))
+		hasSubshellEnd := strings.HasSuffix(part, ")")
+		part = strings.TrimSpace(strings.TrimRight(part, ")"))
 		if strings.HasPrefix(part, "cd ") {
 			dir := strings.Trim(strings.TrimSpace(strings.TrimPrefix(part, "cd ")), "\"'")
-			cwd = filepath.ToSlash(filepath.Clean(filepath.Join(cwd, dir)))
+			if dir == root || filepath.Clean(dir) == filepath.Clean(root) {
+				cwd = root
+			} else {
+				cwd = filepath.ToSlash(filepath.Clean(filepath.Join(cwd, dir)))
+			}
 			continue
 		}
 		if containerBuildRE.MatchString(part) {
 			return true
 		}
-		if cwd == root && nodeProductionBuildRE.MatchString(part) {
+		if (cwd == root || filepath.Clean(cwd) == filepath.Clean(root) || (cwd == "." && strings.HasPrefix(part, "cd "+root))) && nodeProductionBuildRE.MatchString(part) {
 			return true
+		}
+		if hasSubshellEnd || hasSubshell {
+			cwd = "."
 		}
 	}
 	return false
