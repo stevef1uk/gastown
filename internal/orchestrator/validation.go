@@ -857,7 +857,11 @@ func commandPathsMatchPhaseFiles(cmd string, files []string) bool {
 		// For test -f paths, resolve against cwd if set.
 		resolved := path
 		if cwd != "" {
-			resolved = cwd + "/" + path
+			if strings.HasPrefix(path, cwd+"/") {
+				resolved = path
+			} else {
+				resolved = cwd + "/" + path
+			}
 		}
 		// Extract first path component of the resolved path.
 		firstComp := resolved
@@ -867,7 +871,7 @@ func commandPathsMatchPhaseFiles(cmd string, files []string) bool {
 		// If first component is a known top-level dir, check the full
 		// resolved path against required files.
 		if topDirs[firstComp] {
-			if fileSet[resolved] {
+			if fileSet[resolved] || fileSet[path] {
 				continue
 			}
 			// The first component is a valid dir — the path may be a

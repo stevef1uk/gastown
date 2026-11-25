@@ -34,6 +34,9 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 	"analysis": func(r *stateRunner, cmd string) error {
 		return validateAnalysisCommand(cmd, r.rig)
 	},
+	"spec_analysis": func(r *stateRunner, cmd string) error {
+		return validateSpecAnalysisCommand(cmd, r.rig)
+	},
 	"spec_review": func(r *stateRunner, cmd string) error {
 		return validateSpecReviewCommand(cmd, r.rig)
 	},
@@ -100,6 +103,7 @@ var cmdGuardHandlers = map[string]cmdGuardFn{
 
 var cmdGuardRejectScope = map[string]string{
 	"analysis":       "analyst scope",
+	"spec_analysis":  "spec analysis scope",
 	"spec_review":    "spec review scope",
 	"design":         "architect scope",
 	"planning":       "planner scope",
@@ -114,6 +118,11 @@ var cmdGuardRejectScope = map[string]string{
 
 var trackHandlers = map[string]trackFn{
 	"analysis": func(r *stateRunner, cmd string, cmdErr error) {
+		if cmdErr != nil {
+			r.track.hadCmdFailure = true
+		}
+	},
+	"spec_analysis": func(r *stateRunner, cmd string, cmdErr error) {
 		if cmdErr != nil {
 			r.track.hadCmdFailure = true
 		}
@@ -304,6 +313,9 @@ var trackHandlers = map[string]trackFn{
 var artifactValidators = map[string]artifactValidateFn{
 	"analysis": func(r *stateRunner, _ string) error {
 		return validateAnalysisArtifacts(r.townRoot, r.rig)
+	},
+	"spec_analysis": func(r *stateRunner, _ string) error {
+		return nil // spec_analysis is outcome-driven, findings are reported in JSON summary
 	},
 	"spec_review": func(r *stateRunner, _ string) error {
 		return nil // spec_review is outcome-driven, no artifact checks

@@ -24,6 +24,7 @@ rework_feedback:
   test_plan->design: architecture_failure_to_design
   test_plan_review->design: architecture_failure_to_design
   advance_phase->planning: phase_advance_to_planning
+  spec_review->spec_analysis: spec_review_to_analyst
 # AGENTS: Change agent behavior in this file (hooks, prompts, failure_hint) — NOT with if task.State in gt-agent.
 # See internal/orchestrator/prompt_context.go and town/README.md § "FSM behavior belongs in YAML".
 # Artifact guards for gt-agent. Per-rig values come from mayor/rig/.gastown/workflow-profile.json
@@ -39,15 +40,61 @@ states:
     prompt_file: prompts/rig-flow/kickoff.md
     instructions: |
       1. Ensure rig '{{rig}}' is registered and `{{rig}}/mayor/rig/SPEC.md` exists.
-      2. Report outcome success when ready for design.
+      2. Report outcome success when ready for spec analysis.
     hooks:
       retry_hint: |
         One CMD: per line. Confirm the rig is registered and SPEC.md exists before reporting success.
     transitions:
       success:
-        to: design
+        to: spec_analysis
       failure:
         to: kickoff
+  spec_analysis:
+    role: analyst
+    prompt_file: prompts/rig-flow/spec_analysis.md
+    instructions: |
+      1. Read `{{town_root}}/{{rig}}/mayor/rig/SPEC.md`.
+      2. Audit SPEC.md for internal consistency: ports, dev/test/start commands, API endpoints, schema definitions, file paths, and phase scope boundaries.
+      3. Report success with detailed structured findings and proposed fixes for QA to vet and apply. If SPEC.md is completely consistent, report success with zero defects found.
+    hooks:
+      max_cmd_turns: 15
+      cmd_guard: spec_analysis
+      cmd_rewrites: [rig_placeholders, unwrap_bash_lc, spec_md_after_cd, spec_md_case]
+      track: spec_analysis
+      artifacts: spec_analysis
+      retry_hint: |
+        One CMD: per line. Read SPEC.md and check for internal consistency conflicts. Output findings in your summary.
+      failure_hint: |
+        Inspect SPEC.md for contradictions or gaps and report them clearly so QA can evaluate them.
+    transitions:
+      success:
+        to: spec_review
+      failure:
+        to: spec_analysis
+  spec_review:
+    role: qa
+    prompt_file: prompts/rig-flow/spec_review.md
+    instructions: |
+      1. Read `{{town_root}}/{{rig}}/mayor/rig/SPEC.md`.
+      2. Review the consistency findings reported by the Analyst.
+      3. Apply approved fixes directly to SPEC.md using sed, patch, or precise edits.
+      4. If findings are invalid or require deeper analysis, report failure to return to Analyst.
+      5. When SPEC.md is verified consistent, run gt rig spec-index (if needed) and report success.
+    hooks:
+      max_cmd_turns: 15
+      cmd_guard: spec_review
+      cmd_rewrites: [rig_placeholders, unwrap_bash_lc, spec_md_after_cd, spec_md_case]
+      track: spec_review
+      artifacts: spec_review
+      retry_hint: |
+        One CMD: per line. Review Analyst findings, apply verified fixes to SPEC.md, and confirm validity before reporting success.
+      failure_hint: |
+        Read SPEC.md. If proposed fixes are ungrounded or unclear, explain what needs re-analysis in your failure summary.
+    transitions:
+      success:
+        to: design
+      failure:
+        to: spec_analysis
   design:
     role: architect
     prompt_file: prompts/rig-flow/design.md

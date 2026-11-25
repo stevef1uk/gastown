@@ -1984,8 +1984,40 @@ func validateAnalysisCommand(cmd, rig string) error {
 	return fmt.Errorf("analyst may only read REQUIREMENTS.md, write SPEC.md, and verify file sizes")
 }
 
+// validateSpecAnalysisCommand blocks scope creep during rig-flow spec analysis.
+// Analyst may only inspect SPEC.md (and REQUIREMENTS.md if present).
+func validateSpecAnalysisCommand(cmd, rig string) error {
+	lower := strings.ToLower(cmd)
+
+	// Analyst is strictly read-only on SPEC.md during spec analysis.
+	if strings.Contains(lower, ">") {
+		return fmt.Errorf("analyst in spec analysis is read-only and may not write files")
+	}
+
+	if strings.Contains(lower, "cat ") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+		return nil
+	}
+	if (strings.Contains(lower, "head ") || strings.Contains(lower, "tail ")) && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+		return nil
+	}
+	if strings.Contains(lower, "grep") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+		return nil
+	}
+	if strings.Contains(lower, "wc") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+		return nil
+	}
+	if strings.Contains(lower, "diff") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+		return nil
+	}
+	if strings.Contains(lower, "test -f") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+		return nil
+	}
+
+	return fmt.Errorf("analyst may only inspect SPEC.md and verify file contents")
+}
+
 // validateSpecReviewCommand blocks scope creep before shell execution.
-// QA spec review may only read REQUIREMENTS.md and SPEC.md.
+// QA spec review may inspect REQUIREMENTS.md/SPEC.md, patch SPEC.md, or run gt rig spec-index.
 func validateSpecReviewCommand(cmd, rig string) error {
 	lower := strings.ToLower(cmd)
 
@@ -1996,23 +2028,45 @@ func validateSpecReviewCommand(cmd, rig string) error {
 	if (strings.Contains(lower, "head ") || strings.Contains(lower, "tail ")) && strings.Contains(lower, "requirements.md") {
 		return nil
 	}
-	// Reading SPEC.md.
+	// Reading or writing SPEC.md.
 	if strings.Contains(lower, "cat ") && strings.Contains(lower, "spec.md") {
 		return nil
 	}
 	if (strings.Contains(lower, "head ") || strings.Contains(lower, "tail ")) && strings.Contains(lower, "spec.md") {
 		return nil
 	}
+	if strings.Contains(lower, "cat >") && strings.Contains(lower, "spec.md") {
+		return nil
+	}
+	// sed or patch on SPEC.md for applying vetted corrections.
+	if (strings.Contains(lower, "sed") || strings.Contains(lower, "patch")) && strings.Contains(lower, "spec.md") {
+		return nil
+	}
+	// grep on either file.
+	if strings.Contains(lower, "grep") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+		return nil
+	}
 	// wc -c on either file.
 	if strings.Contains(lower, "wc") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
 		return nil
 	}
-	// diff between the two files.
-	if strings.Contains(lower, "diff ") && strings.Contains(lower, "requirements.md") && strings.Contains(lower, "spec.md") {
+	// diff between the two files or git diff/status.
+	if strings.Contains(lower, "diff") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+		return nil
+	}
+	if strings.Contains(lower, "git diff") || strings.Contains(lower, "git status") {
+		return nil
+	}
+	// test -f on SPEC.md or REQUIREMENTS.md.
+	if strings.Contains(lower, "test -f") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+		return nil
+	}
+	// gt rig spec-index.
+	if strings.Contains(lower, "gt rig spec-index") {
 		return nil
 	}
 
-	return fmt.Errorf("spec review may only read REQUIREMENTS.md and SPEC.md")
+	return fmt.Errorf("spec review may only read/patch SPEC.md, read REQUIREMENTS.md, or run gt rig spec-index")
 }
 
 func stripStderrRedirections(s string) string {

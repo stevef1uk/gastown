@@ -36,7 +36,7 @@ func TestReqFlowMatchesRigFlowAfterIntake(t *testing.T) {
 		t.Fatalf("rig-flow qa_review recovery = %q, want review_recovery", got)
 	}
 	for name, state := range rig.States {
-		if name == "kickoff" {
+		if name == "kickoff" || name == "spec_analysis" || name == "spec_review" {
 			continue
 		}
 		reqState, ok := req.States[name]
@@ -49,8 +49,23 @@ func TestReqFlowMatchesRigFlowAfterIntake(t *testing.T) {
 			t.Errorf("unexpected req-flow-only state after intake: %q", name)
 		}
 	}
+	for key, val := range rig.ReworkFeedback {
+		if strings.HasPrefix(key, "spec_review->") {
+			continue
+		}
+		if reqVal, ok := req.ReworkFeedback[key]; !ok || reqVal != val {
+			t.Errorf("req-flow rework feedback %q = %q, want %q", key, reqVal, val)
+		}
+	}
+	for key, val := range req.ReworkFeedback {
+		if strings.HasPrefix(key, "spec_review->") {
+			continue
+		}
+		if rigVal, ok := rig.ReworkFeedback[key]; !ok || rigVal != val {
+			t.Errorf("rig-flow rework feedback %q = %q, want %q", key, rigVal, val)
+		}
+	}
 	if !reflect.DeepEqual(req.StuckGuard, rig.StuckGuard) ||
-		!reflect.DeepEqual(req.ReworkFeedback, rig.ReworkFeedback) ||
 		!reflect.DeepEqual(req.Validation, rig.Validation) {
 		t.Fatal("req-flow shared configuration differs from rig-flow")
 	}

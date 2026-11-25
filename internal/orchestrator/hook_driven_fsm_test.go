@@ -56,6 +56,8 @@ func TestRigFlowYAML_allPipelineStatesHaveHooks(t *testing.T) {
 	tpl := loadRigFlowTemplate(t)
 	want := map[string]string{
 		"kickoff":        "",
+		"spec_analysis":  "spec_analysis",
+		"spec_review":    "spec_review",
 		"design":         "design",
 		"planning":       "planning",
 		"plan_review":    "plan_review",

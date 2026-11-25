@@ -75,6 +75,25 @@ var reworkFeedbackBuilders = map[string]reworkFeedbackBuilder{
 	"architecture_failure_to_design": func(summary, raw string, v WorkflowValidation) string {
 		return prepareArchitectureFailureToDesignFeedback(summary, raw, v)
 	},
+	"spec_review_to_analyst": func(summary, raw string, v WorkflowValidation) string {
+		return prepareSpecReviewToAnalystFeedback(summary, raw)
+	},
+}
+
+// prepareSpecReviewToAnalystFeedback renders rework guidance when QA rejects
+// SPEC consistency findings back to the analyst.
+func prepareSpecReviewToAnalystFeedback(summary, raw string) string {
+	cleaned := sanitizeAttemptFeedback(raw)
+	if summary != "" && cleaned != "" {
+		return "QA rejected SPEC consistency findings:\n\n" + summary + "\n\n" + cleaned
+	}
+	if summary != "" {
+		return "QA rejected SPEC consistency findings:\n\n" + summary
+	}
+	if cleaned != "" {
+		return "QA rejected SPEC consistency findings:\n\n" + cleaned
+	}
+	return "QA rejected SPEC consistency findings. Re-read SPEC.md and verify all consistency findings against the actual document text."
 }
 
 // prepareArchitectureFailureToDesignFeedback renders rework guidance when an agent

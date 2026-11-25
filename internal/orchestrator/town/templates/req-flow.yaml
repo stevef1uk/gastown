@@ -24,6 +24,7 @@ rework_feedback:
   test_plan->design: architecture_failure_to_design
   test_plan_review->design: architecture_failure_to_design
   advance_phase->planning: phase_advance_to_planning
+  spec_review->analysis: spec_review_to_analyst
 # AGENTS: Change agent behavior in this file (hooks, prompts, failure_hint) — NOT with if task.State in gt-agent.
 # See internal/orchestrator/prompt_context.go and town/README.md § "FSM behavior belongs in YAML".
 # Artifact guards for gt-agent. Per-rig values come from mayor/rig/.gastown/workflow-profile.json
