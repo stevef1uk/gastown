@@ -339,6 +339,8 @@ func RunPreRunHook(step, townRoot, rig string, v WorkflowValidation) (string, er
 		}
 	case "prune_stale_layout_files":
 		return PruneStaleLayoutFilesLog(townRoot, rig, v)
+	case "ensure_phase_boundary_isolation", "ensure_phase_isolation":
+		return EnsurePhaseBoundaryIsolationLog(townRoot, rig, v)
 	case "prune_rig_root_junk":
 		mayorRig := filepath.Join(townRoot, rig, "mayor", "rig")
 		return rigpkg.RemoveMayorRigAgentJunkLog(mayorRig)

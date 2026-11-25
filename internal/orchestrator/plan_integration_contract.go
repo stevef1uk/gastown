@@ -66,7 +66,7 @@ func renderPlanIntegrationContract(rigDir string, v WorkflowValidation) string {
 	b.WriteString("## Integration contract\n\n")
 	b.WriteString(fmt.Sprintf("**Entrypoint:** `%s`\n\n", mainPath))
 	b.WriteString("**Startup / dependency order (SPEC + architecture):**\n\n")
-	for _, line := range extractNumberedLines(specDoc+"\n"+archDoc, 8) {
+	for _, line := range extractStartupDependencyOrder(archDoc, specDoc) {
 		b.WriteString("- ")
 		b.WriteString(line)
 		b.WriteString("\n")
@@ -114,6 +114,55 @@ func renderPlanIntegrationContract(rigDir string, v WorkflowValidation) string {
 	return b.String()
 }
 
+func extractStartupDependencyOrder(archDoc, specDoc string) []string {
+	if archDoc == "" && specDoc == "" {
+		return nil
+	}
+	// 1. Look for Server Wiring Pattern or Startup in archDoc
+	lines := strings.Split(archDoc, "\n")
+	var out []string
+	inSection := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(trimmed, "#") && (strings.Contains(lower, "server wiring pattern") || strings.Contains(lower, "startup order") || strings.Contains(lower, "server wiring") || strings.Contains(lower, "startup")) {
+			inSection = true
+			continue
+		}
+		if inSection && strings.HasPrefix(trimmed, "#") {
+			break
+		}
+		if inSection {
+			if len(trimmed) >= 3 && trimmed[0] >= '1' && trimmed[0] <= '9' {
+				i := 0
+				for i < len(trimmed) && (trimmed[i] >= '0' && trimmed[i] <= '9' || trimmed[i] == '.' || trimmed[i] == ')') {
+					i++
+				}
+				rest := strings.TrimSpace(trimmed[i:])
+				if rest != "" {
+					out = append(out, rest)
+				}
+			}
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	// 2. Check for numbered lines in archDoc before looking at specDoc
+	archLines := extractNumberedLines(archDoc, 8)
+	if len(archLines) > 0 {
+		return archLines
+	}
+	// 3. Fallback to clean standard service startup steps
+	return []string{
+		"Load configuration from environment (internal/config)",
+		"Initialize database store and apply schema setup (internal/store)",
+		"Construct application and register HTTP API handlers (internal/web)",
+		"Start HTTP server on configured host:port",
+		"Handle graceful shutdown on SIGTERM/SIGINT",
+	}
+}
+
 func extractNumberedLines(doc string, max int) []string {
 	var out []string
 	for _, line := range strings.Split(doc, "\n") {
@@ -152,7 +201,7 @@ func extractArchitectureOwnershipRows(archDoc string, layoutRoot string) []strin
 	}
 	for _, line := range lines {
 		lower := strings.ToLower(strings.TrimSpace(line))
-		if strings.Contains(lower, "per-file ownership") || strings.Contains(lower, "file | owns") {
+		if strings.Contains(lower, "per-file ownership") || strings.Contains(lower, "file | owns") || strings.Contains(lower, "bead ownership") || strings.Contains(lower, "module / bead ownership") {
 			inTable = true
 			continue
 		}
@@ -162,12 +211,28 @@ func extractArchitectureOwnershipRows(archDoc string, layoutRoot string) []strin
 		if !inTable {
 			continue
 		}
-		// Only process lines that contain backticks and the layout root prefix
-		if !strings.Contains(line, "`") {
+		// Table row parsing: | `path` | exports | ... |
+		if !strings.Contains(line, "|") || !strings.Contains(line, "`") {
 			continue
 		}
-		if m := regexp.MustCompile(fmt.Sprintf("`(%s[^`]+)`", regexp.QuoteMeta(prefix))).FindStringSubmatch(line); len(m) >= 2 {
-			out = append(out, strings.TrimSpace(m[1]))
+		parts := strings.Split(line, "|")
+		if len(parts) < 3 {
+			continue
+		}
+		fileCol := strings.TrimSpace(parts[1])
+		ownsCol := strings.TrimSpace(parts[2])
+		if fileCol == "---" || strings.EqualFold(fileCol, "file") || ownsCol == "---" {
+			continue
+		}
+		m := regexp.MustCompile(fmt.Sprintf("`(%s[^`]+)`", regexp.QuoteMeta(prefix))).FindStringSubmatch(fileCol)
+		if len(m) < 2 {
+			continue
+		}
+		filePath := strings.TrimSpace(m[1])
+		if ownsCol != "" && ownsCol != "—" && ownsCol != "-" {
+			out = append(out, fmt.Sprintf("`%s`: %s", filePath, ownsCol))
+		} else {
+			out = append(out, fmt.Sprintf("`%s`", filePath))
 		}
 	}
 	return out

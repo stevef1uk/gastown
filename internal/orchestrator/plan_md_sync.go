@@ -46,6 +46,9 @@ func SyncPlanningArtifacts(townRoot, rig string, v WorkflowValidation, forcePlan
 	// Do NOT scope to active phase: plan.md and bead sync must include ALL phases.
 	// v = v.ForActivePhase()  <-- REMOVED: this was incorrectly filtering to active phase only.
 	var parts []string
+	if isoLog, isoErr := EnsurePhaseBoundaryIsolationLog(townRoot, rig, v); isoErr == nil && isoLog != "" && isoLog != "phase boundary isolation: clean" {
+		parts = append(parts, isoLog)
+	}
 	if repairLog, err := RepairPlanningBeadSet(townRoot, rig, v); err != nil {
 		return "", err
 	} else if repairLog != "" {

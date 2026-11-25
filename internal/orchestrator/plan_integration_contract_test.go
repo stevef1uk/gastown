@@ -45,6 +45,50 @@ func TestRenderPlanIntegrationContract_includesAPIRoutes(t *testing.T) {
 	if strings.Contains(out, "| GET | `/static` |") || strings.Contains(out, "| DELETE | `/api/links` |") {
 		t.Fatalf("contract must not strip path params:\n%s", out)
 	}
+	if !strings.Contains(out, "`linkshelf/internal/api/handlers.go`: handlers") {
+		t.Fatalf("contract should include ownership symbols:\n%s", out)
+	}
+}
+
+func TestRenderPlanIntegrationContract_serverWiringPattern(t *testing.T) {
+	dir := t.TempDir()
+	spec := `# Spec
+1. Fresh database schema starts empty
+2. Second init is idempotent
+`
+	arch := `# Architecture
+### Server Wiring Pattern
+1. Entrypoint parses config from environment.
+2. Initialize database store.
+3. Start HTTP server.
+
+## Module / bead ownership
+| File | Owns (exported) | Must not define |
+| --- | --- | --- |
+| ` + "`demo/server/app.go`" + ` | App struct, NewApp function | SQL statements |
+`
+	for name, body := range map[string]string{"SPEC.md": spec, "architecture.md": arch} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := WorkflowValidation{
+		LayoutRoot: "demo",
+		RequiredFiles: []string{
+			"demo/cmd/server/main.go",
+			"demo/server/app.go",
+		},
+	}
+	out := renderPlanIntegrationContract(dir, v)
+	if !strings.Contains(out, "Entrypoint parses config from environment.") {
+		t.Fatalf("expected server wiring pattern step in startup order, got:\n%s", out)
+	}
+	if strings.Contains(out, "Fresh database schema starts empty") {
+		t.Fatalf("contract should not copy-paste store test scenarios into startup order:\n%s", out)
+	}
+	if !strings.Contains(out, "`demo/server/app.go`: App struct, NewApp function") {
+		t.Fatalf("expected file exports in contract, got:\n%s", out)
+	}
 }
 
 func TestEnsurePlanIntegrationContract_patchesMissingSection(t *testing.T) {

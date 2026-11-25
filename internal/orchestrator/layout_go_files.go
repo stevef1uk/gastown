@@ -342,11 +342,14 @@ func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) (removed 
 }
 
 func PruneStaleLayoutFilesLog(townRoot, rig string, v WorkflowValidation) (string, error) {
+	var parts []string
+	if isoLog, isoErr := EnsurePhaseBoundaryIsolationLog(townRoot, rig, v); isoErr == nil && isoLog != "" && isoLog != "phase boundary isolation: clean" {
+		parts = append(parts, isoLog)
+	}
 	removed, warnings, err := PruneStaleLayoutFiles(townRoot, rig, v)
 	if err != nil {
 		return "", err
 	}
-	var parts []string
 	if len(removed) > 0 {
 		parts = append(parts, "removed stale files: "+joinStrings(removed, ", "))
 	}

@@ -86,6 +86,38 @@ func TestAllowForeignOpenBeadCompileFixForVerifyFailure_schemaBlockedByStoreTest
 	}
 }
 
+func TestAllowForeignOpenBeadCompileFixForVerifyFailure_testRuntimeFailure(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "testgt3"
+	webDir := filepath.Join(dir, rig, "mayor", "rig", "taskboard/internal/web")
+	if err := os.MkdirAll(webDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "api.go"), []byte("package web\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "app_test.go"), []byte("package web_test\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	v := WorkflowValidation{
+		LayoutRoot:        "taskboard",
+		TestRunner:        "go",
+		BeadTitleContains: "Implement taskboard/",
+		RequiredFiles: []string{
+			"taskboard/internal/web/api.go",
+			"taskboard/internal/web/app.go",
+			"taskboard/internal/web/app_test.go",
+		},
+	}
+	active := "taskboard/internal/web/api.go"
+	written := "taskboard/internal/web/app_test.go"
+	out := "--- FAIL: TestTaskStorageFailuresReturnGenericInternalError (0.00s)\n    --- FAIL: TestTaskStorageFailuresReturnGenericInternalError/GET_task (0.00s)\n        app_test.go:375: status = 405, want 500\nFAIL\nFAIL\ttaskboard/internal/web\t0.019s\n"
+	if !AllowForeignOpenBeadCompileFixForVerifyFailure(dir, rig, active, written, out, v) {
+		t.Fatal("expected allow test repair fix on foreign app_test.go during verify failure")
+	}
+}
+
 func TestFormatForeignOpenBeadTestCompileHint(t *testing.T) {
 	dir := t.TempDir()
 	rig := "testgt3"

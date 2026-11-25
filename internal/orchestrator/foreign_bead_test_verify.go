@@ -100,7 +100,9 @@ func AllowForeignOpenBeadCompileFixForVerifyFailure(townRoot, rig, activeBeadPat
 	if out == "" {
 		return false
 	}
-	if !GoCompileErrorsOnlyInTestFiles(out, v.LayoutRoot) && !strings.Contains(out, "[build failed]") {
+	isCompileFail := GoCompileErrorsOnlyInTestFiles(out, v.LayoutRoot) || strings.Contains(out, "[build failed]")
+	isTestFail := strings.Contains(out, "FAIL") && (strings.Contains(out, "--- FAIL:") || strings.Contains(out, ".go:") || strings.Contains(out, "status =") || strings.Contains(out, "want "))
+	if !isCompileFail && !isTestFail {
 		return false
 	}
 	if !GoCompileOutputCitesFile(out, writtenPath, v.LayoutRoot) {
