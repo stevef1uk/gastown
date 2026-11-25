@@ -62,6 +62,7 @@ func extractGoTestDiagnosticPaths(output string, v WorkflowValidation) []string 
 	for _, p := range GoTestFailureProductionPaths(output, v.LayoutRoot) {
 		paths = appendUniquePath(paths, p)
 	}
+	active := v.ActivePhaseIndex()
 	for _, m := range goTestFailLineRE.FindAllStringSubmatch(output, -1) {
 		if len(m) >= 2 {
 			testPath := resolveGoTestFilePath(m[1], v.LayoutRoot, output)
@@ -70,18 +71,18 @@ func extractGoTestDiagnosticPaths(output string, v WorkflowValidation) []string 
 				if src := SourcePathForCorrelatedTest(testPath, v.LayoutRoot); src != "" {
 					paths = appendUniquePath(paths, src)
 				}
-				for _, req := range v.UnionRequiredFiles() {
-					if strings.HasSuffix(req, ".go") && !IsTestImplementPath(req) && SameImplementGoPackage(testPath, req, v.LayoutRoot) {
-						paths = appendUniquePath(paths, req)
+				// Only consider other package files if the failing test itself belongs to an earlier phase.
+				// If the failing test belongs to the active or a future phase, it is active-phase work
+				// and must NOT falsely implicate earlier-phase files in the same package.
+				testPhase := v.FindDeliveryPhaseForFile(testPath)
+				if testPhase >= 0 && testPhase < active {
+					for _, req := range v.UnionRequiredFiles() {
+						if strings.HasSuffix(req, ".go") && !IsTestImplementPath(req) && SameImplementGoPackage(testPath, req, v.LayoutRoot) {
+							paths = appendUniquePath(paths, req)
+						}
 					}
 				}
 			}
-		}
-	}
-	for _, req := range v.UnionRequiredFiles() {
-		base := filepath.Base(req)
-		if strings.Contains(output, req) || (strings.Contains(output, base) && strings.Contains(output, filepath.Base(filepath.Dir(req)))) {
-			paths = appendUniquePath(paths, req)
 		}
 	}
 	return paths

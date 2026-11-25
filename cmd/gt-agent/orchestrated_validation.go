@@ -9,11 +9,17 @@ import (
 )
 
 func pythonVerifyCommandMatches(cmd, verify string, v orchestrator.WorkflowValidation) bool {
+	c := strings.ToLower(cmd)
+	verifyLow := strings.ToLower(verify)
+	if !strings.Contains(verifyLow, "python") && !strings.Contains(verifyLow, "pytest") && !strings.Contains(verifyLow, "unittest") && !strings.Contains(verifyLow, "compileall") {
+		return false
+	}
+	if !strings.Contains(c, "python") && !strings.Contains(c, "pytest") && !strings.Contains(c, "unittest") && !strings.Contains(c, "compileall") {
+		return false
+	}
 	if commandMatchesQAVerify(cmd, verify) {
 		return true
 	}
-	c := strings.ToLower(cmd)
-	verifyLow := strings.ToLower(verify)
 	if strings.Contains(verifyLow, "import pytest") {
 		return strings.Contains(c, "import pytest")
 	}

@@ -187,3 +187,16 @@ func TestCompletedPhaseGoTestFailure_passingTestsDoNotRewindOnProse(t *testing.T
 		t.Fatalf("passing tests must never rewind on prose mentioning earlier files: idx=%d paths=%v", idx, paths)
 	}
 }
+
+func TestCompletedPhaseGoTestFailure_activePhaseTestFailureDoesNotRewindEarlierPhaseInSamePackage(t *testing.T) {
+	_, _, v := compileRewindFixture(t)
+	// Suppose active phase is phase 1 (browser), earlier phase 0 is service.
+	// A failure line in a test belonging to phase 1 (e.g. browser_test.go) should NOT
+	// cause rewind to phase 0 even if files in the same package belong to phase 0.
+	output := "--- FAIL: TestBrowserUI (0.01s)\n    browser_test.go:42: element missing\nFAIL\n"
+	paths := extractGoTestDiagnosticPaths(output, v)
+	idx, earlierPaths := earlierPhaseDiagnosticPaths(v, paths)
+	if idx != -1 || len(earlierPaths) != 0 {
+		t.Fatalf("active phase test failure must not blame earlier phase files in same package: idx=%d paths=%v", idx, earlierPaths)
+	}
+}
