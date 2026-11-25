@@ -892,10 +892,19 @@ func formatWorkflowReworkBlock(task *orchestrator.Task, townRoot, rig string) st
 		return ""
 	}
 	r := task.PendingRework
-	if r.FromState == task.State && !(task.State == "test_review" && len(r.TestRepairFiles) > 0) {
+	if r.FromState == task.State && !(task.State == "test_review" && len(r.TestRepairFiles) > 0) && !(task.State == "spec_review") {
 		return ""
 	}
 	var b strings.Builder
+	if task.State == "spec_review" && r.FromState == "spec_review" {
+		b.WriteString("## Human SPEC review completed — verify SPEC.md before proceeding\n")
+		b.WriteString("The human operator was notified with the following recommendations:\n")
+		if r.Summary != "" {
+			b.WriteString(fmt.Sprintf("%s\n\n", r.Summary))
+		}
+		b.WriteString("Verify that SPEC.md is now self-consistent. If all checks pass, run `gt rig spec-index --force <rig>` and report success. If genuine contradictions still remain, report pause again with updated recommendations.\n")
+		return b.String()
+	}
 	if task.State == "test_review" && r.FromState == "test_review" && len(r.TestRepairFiles) > 0 {
 		b.WriteString("## Review the original test finding again\n")
 		b.WriteString(r.Summary + "\n")
@@ -913,7 +922,7 @@ func formatWorkflowReworkBlock(task *orchestrator.Task, townRoot, rig string) st
 		if r.Feedback != "" && r.Feedback != r.Summary {
 			b.WriteString(fmt.Sprintf("- Details: %s\n", r.Feedback))
 		}
-		b.WriteString("\nVet the Analyst's findings above against SPEC.md. If verified, apply necessary corrections to SPEC.md and report success. If invalid, report failure to return to spec_analysis.\n")
+		b.WriteString("\nVet the Analyst's findings above against SPEC.md. If verified, formulate recommendations for the human operator and report pause. If invalid, report failure to return to spec_analysis. If already clean, run spec-index and report success.\n")
 		return b.String()
 	}
 	b.WriteString("## Prior step failed — fix before completing this step\n")
@@ -2031,9 +2040,15 @@ func validateSpecAnalysisCommand(cmd, rig string) error {
 }
 
 // validateSpecReviewCommand blocks scope creep before shell execution.
-// QA spec review may inspect REQUIREMENTS.md/SPEC.md, patch SPEC.md, or run gt rig spec-index.
+// QA spec review may inspect REQUIREMENTS.md/SPEC.md/SPEC_AUDIT.md, or run gt rig spec-index.
+// QA is read-only on SPEC.md (Human-in-the-Loop makes all edits).
 func validateSpecReviewCommand(cmd, rig string) error {
 	lower := strings.ToLower(cmd)
+
+	// QA in spec review is strictly read-only on SPEC.md.
+	if strings.Contains(lower, ">") || strings.Contains(lower, "sed") || strings.Contains(lower, "patch") {
+		return fmt.Errorf("QA in spec review is read-only; human operator must edit SPEC.md")
+	}
 
 	// Reading REQUIREMENTS.md, SPEC.md, or SPEC_AUDIT.md.
 	if strings.Contains(lower, "cat ") && (strings.Contains(lower, "requirements.md") || strings.Contains(lower, "spec.md") || strings.Contains(lower, "spec_audit.md")) {
@@ -2042,30 +2057,23 @@ func validateSpecReviewCommand(cmd, rig string) error {
 	if (strings.Contains(lower, "head ") || strings.Contains(lower, "tail ")) && (strings.Contains(lower, "requirements.md") || strings.Contains(lower, "spec.md") || strings.Contains(lower, "spec_audit.md")) {
 		return nil
 	}
-	if strings.Contains(lower, "cat >") && strings.Contains(lower, "spec.md") {
-		return nil
-	}
-	// sed or patch on SPEC.md for applying vetted corrections.
-	if (strings.Contains(lower, "sed") || strings.Contains(lower, "patch")) && strings.Contains(lower, "spec.md") {
-		return nil
-	}
 	// grep on either file.
-	if strings.Contains(lower, "grep") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+	if strings.Contains(lower, "grep") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md") || strings.Contains(lower, "spec_audit.md")) {
 		return nil
 	}
 	// wc -c on either file.
-	if strings.Contains(lower, "wc") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+	if strings.Contains(lower, "wc") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md") || strings.Contains(lower, "spec_audit.md")) {
 		return nil
 	}
 	// diff between the two files or git diff/status.
-	if strings.Contains(lower, "diff") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+	if strings.Contains(lower, "diff") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md") || strings.Contains(lower, "spec_audit.md")) {
 		return nil
 	}
 	if strings.Contains(lower, "git diff") || strings.Contains(lower, "git status") {
 		return nil
 	}
-	// test -f on SPEC.md or REQUIREMENTS.md.
-	if strings.Contains(lower, "test -f") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+	// test -f on SPEC.md, REQUIREMENTS.md, or SPEC_AUDIT.md.
+	if strings.Contains(lower, "test -f") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md") || strings.Contains(lower, "spec_audit.md")) {
 		return nil
 	}
 	// gt rig spec-index.
@@ -2073,7 +2081,7 @@ func validateSpecReviewCommand(cmd, rig string) error {
 		return nil
 	}
 
-	return fmt.Errorf("spec review may only read/patch SPEC.md, read REQUIREMENTS.md, or run gt rig spec-index")
+	return fmt.Errorf("spec review may only read/diff SPEC.md/REQUIREMENTS.md/SPEC_AUDIT.md, or run gt rig spec-index")
 }
 
 func stripStderrRedirections(s string) string {

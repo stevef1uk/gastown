@@ -108,7 +108,20 @@ NEXT_PUBLIC_API_URL=http://localhost:3000
 		t.Fatalf("after spec_analysis rework next = %q, want spec_review", next)
 	}
 
-	// QA applies the fix to SPEC.md and generates workflow profile
+	// Step 5: QA pauses workflow for Human Review (Human-in-the-Loop)
+	pauseMsg := "SPEC review requires human updates: Port conflict between frontend and backend. Please edit SPEC.md."
+	next, err = mgr.CompleteTask(wfID, "pause", rigName+"/qa", pauseMsg, "", nil)
+	if err != nil {
+		t.Fatalf("CompleteTask spec_review pause: %v", err)
+	}
+	if mgr.instances[wfID].Status != "paused" {
+		t.Fatalf("instance status = %q, want paused", mgr.instances[wfID].Status)
+	}
+	if !strings.Contains(mgr.instances[wfID].PauseReason, "Port conflict") {
+		t.Fatalf("unexpected pause reason: %q", mgr.instances[wfID].PauseReason)
+	}
+
+	// Human Operator applies the recommended fix to SPEC.md
 	patchedSpec := strings.ReplaceAll(initialSpec, "3000", "8080")
 	if err := os.WriteFile(filepath.Join(rigDir, "SPEC.md"), []byte(patchedSpec), 0644); err != nil {
 		t.Fatal(err)
@@ -121,8 +134,16 @@ NEXT_PUBLIC_API_URL=http://localhost:3000
 		t.Fatal(err)
 	}
 
-	// Step 5: QA completes spec_review -> transitions to design!
-	next, err = mgr.CompleteTask(wfID, "success", rigName+"/qa", "Verified and patched SPEC.md frontend port to 8080.", "", nil)
+	// Human Operator resumes workflow: gt mayor workflow resume
+	if err := mgr.ResumeWorkflow(wfID); err != nil {
+		t.Fatalf("ResumeWorkflow: %v", err)
+	}
+	if mgr.instances[wfID].Status != "running" {
+		t.Fatalf("instance status after resume = %q, want running", mgr.instances[wfID].Status)
+	}
+
+	// Step 6: QA verifies human changes in SPEC.md and completes spec_review -> transitions to design!
+	next, err = mgr.CompleteTask(wfID, "success", rigName+"/qa", "Verified SPEC.md frontend port is 8080. Ready for design.", "", nil)
 	if err != nil {
 		t.Fatalf("CompleteTask spec_review success: %v", err)
 	}

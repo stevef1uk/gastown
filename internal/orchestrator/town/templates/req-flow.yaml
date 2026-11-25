@@ -105,6 +105,8 @@ states:
         to: design
       failure:
         to: analysis
+      pause:
+        to: spec_review
   design:
     role: architect
     prompt_file: prompts/rig-flow/design.md

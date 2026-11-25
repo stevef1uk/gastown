@@ -790,6 +790,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	reviewAction := inst.recordReviewFailure(fromState, activePhaseID, outcome, state.Hooks.ReviewFailureLimit, state.Hooks.ReviewRecoveryState)
 	reviewRecovery := strings.TrimSpace(state.Hooks.ReviewRecoveryState)
 	recoveryPause := fromState == "review_recovery" && outcome == "pause"
+	specReviewPause := fromState == "spec_review" && outcome == "pause"
 	if reviewAction == reviewFailureEscalate {
 		next = reviewRecovery
 		inst.CurrentState = next
@@ -813,11 +814,15 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 			inst.PauseReason = fmt.Sprintf("%s was rejected %d times in delivery phase %q, including after Mayor diagnosis/recovery; inspect the retained findings and fix before resuming", fromState, inst.ReviewFailures[key], activePhaseID)
 		}
 	}
-	if recoveryPause {
+	if recoveryPause || specReviewPause {
 		inst.Status = "paused"
 		inst.PauseReason = strings.TrimSpace(summary)
 		if inst.PauseReason == "" {
-			inst.PauseReason = "Mayor paused review recovery for human diagnosis"
+			if specReviewPause {
+				inst.PauseReason = "SPEC review required: human review and corrections required for SPEC.md"
+			} else {
+				inst.PauseReason = "Mayor paused review recovery for human diagnosis"
+			}
 		}
 	}
 	// Timeout keeps PendingRework even on same-state transitions (planning → planning).
@@ -994,7 +999,7 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		if IsTimeoutOutcome(outcome) && next == fromState && previousTestRepair != nil {
 			inst.PendingRework = previousTestRepair
 		}
-	} else if !recoveryPause && !IsCheckpointOutcome(outcome) && !IsTimeoutOutcome(outcome) && !IsFailureOutcome(outcome) && !IsArchitectureReworkOutcome(outcome) {
+	} else if !recoveryPause && !specReviewPause && !IsCheckpointOutcome(outcome) && !IsTimeoutOutcome(outcome) && !IsFailureOutcome(outcome) && !IsArchitectureReworkOutcome(outcome) {
 		// Success clears QA/plan-review rework for the next agent.
 		if !(fromState == "implementation" && next == "test_review" && activeTestRepair != nil && len(activeTestRepair.TestRepairFiles) > 0) {
 			inst.PendingRework = nil
@@ -1006,6 +1011,15 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 		inst.PendingRework = phaseAdvance
 	}
 	if fromState == "spec_analysis" && next == "spec_review" && outcome == "success" {
+		inst.PendingRework = &WorkflowRework{
+			FromState: fromState,
+			Outcome:   outcome,
+			Summary:   truncateWorkflowText(summary, maxWorkflowReworkSummary),
+			Feedback:  truncateWorkflowText(summary, maxWorkflowReworkFeedback),
+			AgentID:   agentID,
+		}
+	}
+	if specReviewPause {
 		inst.PendingRework = &WorkflowRework{
 			FromState: fromState,
 			Outcome:   outcome,

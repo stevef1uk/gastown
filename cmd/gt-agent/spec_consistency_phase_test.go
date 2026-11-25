@@ -53,13 +53,10 @@ func TestValidateSpecReviewCommand(t *testing.T) {
 		"tail -n 40 SPEC.md",
 		"grep '8000' SPEC.md",
 		"wc -c SPEC.md",
-		"sed -i 's/port 8080/port 8000/g' SPEC.md",
-		"patch -p1 < fix.patch SPEC.md",
 		"diff -u SPEC.md.bak SPEC.md",
 		"git diff SPEC.md",
 		"git status",
 		"test -f SPEC.md",
-		"cat > SPEC.md << 'EOF'\n# patched\nEOF",
 		"gt rig spec-index --force testgt4",
 		"cd testgt4/mayor/rig && gt rig spec-index testgt4",
 	}
@@ -71,6 +68,9 @@ func TestValidateSpecReviewCommand(t *testing.T) {
 	}
 
 	invalid := []string{
+		"sed -i 's/port 8080/port 8000/g' SPEC.md",
+		"patch -p1 < fix.patch SPEC.md",
+		"cat > SPEC.md << 'EOF'\n# patched\nEOF",
 		"npm run build",
 		"pytest",
 		"cat > architecture.md << 'EOF'\n# arch\nEOF",
@@ -81,8 +81,6 @@ func TestValidateSpecReviewCommand(t *testing.T) {
 	for _, cmd := range invalid {
 		if err := validateSpecReviewCommand(cmd, "testgt4"); err == nil {
 			t.Errorf("validateSpecReviewCommand(%q) expected error, got nil", cmd)
-		} else if !strings.Contains(err.Error(), "spec review may only") {
-			t.Errorf("validateSpecReviewCommand(%q) unexpected error message: %v", cmd, err)
 		}
 	}
 }

@@ -158,7 +158,7 @@ func validateSessionName(sessionName, rigName string) error {
 		// Allow canonical preset agent naming: <rig>-witness, <rig>-refinery, etc.
 		suffix := strings.TrimPrefix(namePart, rigName+"-")
 		switch suffix {
-		case "witness", "refinery", "architect", "qa", "polecat":
+		case "witness", "refinery", "architect", "qa", "polecat", "analyst", "planner", "tester":
 			return nil
 		}
 

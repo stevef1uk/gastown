@@ -77,9 +77,9 @@ states:
     instructions: |
       1. Read `{{town_root}}/{{rig}}/mayor/rig/SPEC.md`.
       2. Review the consistency findings reported by the Analyst.
-      3. Apply approved fixes directly to SPEC.md using sed, patch, or precise edits.
+      3. QA does NOT edit SPEC.md. If genuine contradictions exist, formulate clear recommendations in your summary and report pause for human review.
       4. If findings are invalid or require deeper analysis, report failure to return to Analyst.
-      5. When SPEC.md is verified consistent, run gt rig spec-index (if needed) and report success.
+      5. When SPEC.md is verified consistent (either initially or after human updates upon resume), run gt rig spec-index (if needed) and report success.
     hooks:
       review_failure_limit: 3
       review_recovery_state: review_recovery
@@ -89,7 +89,7 @@ states:
       track: spec_review
       artifacts: spec_review
       retry_hint: |
-        One CMD: per line. Review Analyst findings, apply verified fixes to SPEC.md, and confirm validity before reporting success.
+        One CMD: per line. Review Analyst findings. If contradictions exist, report pause with recommendations for the human operator. When clean, run spec-index and report success.
       failure_hint: |
         Read SPEC.md. If proposed fixes are ungrounded or unclear, explain what needs re-analysis in your failure summary.
     transitions:
@@ -97,6 +97,8 @@ states:
         to: design
       failure:
         to: spec_analysis
+      pause:
+        to: spec_review
   design:
     role: architect
     prompt_file: prompts/rig-flow/design.md
