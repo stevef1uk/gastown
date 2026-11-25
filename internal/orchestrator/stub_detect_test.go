@@ -248,3 +248,41 @@ func TestCheckContentNotStub_rejectsSeededTestPlaceholder(t *testing.T) {
 		_ = err
 	}
 }
+
+func TestCheckContentNotStub_acceptsGeneratedTypeScriptDeclaration(t *testing.T) {
+	opts := StubCheckOptionsFromValidation(WorkflowValidation{MinImplementationFileBytes: 400, MinSubstantiveLines: 3})
+	nextEnv := `/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/basic-features/typescript for more information.
+`
+	viteEnv := `/// <reference types="vite/client" />
+`
+	for _, tc := range []struct {
+		rel     string
+		content string
+	}{
+		{"finally/frontend/next-env.d.ts", nextEnv},
+		{"frontend/vite-env.d.ts", viteEnv},
+	} {
+		t.Run(tc.rel, func(t *testing.T) {
+			pathOpts := optsForPath(tc.rel, opts)
+			if err := CheckContentNotStub([]byte(tc.content), tc.rel, pathOpts); err != nil {
+				t.Fatalf("generated declaration %s should pass: %v", tc.rel, err)
+			}
+		})
+	}
+}
+
+func TestSubstantiveLines_treatsTypeScriptReferenceDirectivesAsSubstantive(t *testing.T) {
+	content := `/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+
+// NOTE: comment
+`
+	lines := substantiveLines(content)
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 substantive lines from reference directives, got %d: %v", len(lines), lines)
+	}
+}
