@@ -1,21 +1,21 @@
 {
   "agentModels": {
     "gt-agent-local": "deepseek/deepseek-v4-flash",
-    "gt-agent-gemini": "google/gemini-3.6-flash",
+    "gt-agent-gemini": "google/gemini-2.5-flash-lite",
     "gt-agent-deepseek": "deepseek/deepseek-v4-flash",
     "gt-agent-qa": "deepseek/deepseek-v4-flash"
   },
   "judgeModel": "deepseek/deepseek-v4-flash",
-  "defaultModel": "google/gemini-3.6-flash",
+  "defaultModel": "anthropic/claude-haiku-5.5",
   "models": {
     "judge": "deepseek/deepseek-v4-flash",
-    "architect": "google/gemini-3.6-flash",
-    "analyst": "google/gemini-3.6-flash",
-    "planner": "openai/gpt-6-luna",
-    "polecat": "google/gemini-3.6-flash",
+    "architect": "anthropic/claude-haiku-5.5",
+    "analyst": "anthropic/claude-haiku-5.5",
+    "planner": "anthropic/claude-haiku-5.5",
+    "polecat": "anthropic/claude-haiku-5.5",
     "qa": "deepseek/deepseek-v4-flash",
-    "tester": "google/gemini-3.6-flash",
-    "mayor": "google/gemini-3.6-flash",
-    "default": "google/gemini-3.6-flash"
+    "tester": "anthropic/claude-haiku-5.5",
+    "mayor": "anthropic/claude-haiku-5.5",
+    "default": "anthropic/claude-haiku-5.5"
   }
 }

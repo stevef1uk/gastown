@@ -7,7 +7,7 @@
       "model": "openrouter/free"
     },
     "gt-agent-gemini": {
-      "model": "google/gemini-3.6-flash",
+      "model": "google/gemini-2.5-flash-lite",
       "extra_env": {
         "LLM_TIMEOUT": "1200s"
       }
@@ -25,7 +25,7 @@
       }
     },
     "gt-agent-architect": {
-      "model": "google/gemini-3.6-flash",
+      "model": "anthropic/claude-haiku-5.5",
       "extra_env": {
         "LLM_TIMEOUT": "1200s"
       }
