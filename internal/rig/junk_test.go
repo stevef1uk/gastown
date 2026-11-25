@@ -65,22 +65,26 @@ func TestRejectMayorRigRootShellCommand_blocksRootJunkOnly(t *testing.T) {
 func TestRejectMayorRigRootShellCommand_allowsNpmInSubdir(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		cmd  string
-		want bool
+		cmd        string
+		layoutRoot string
+		want       bool
 	}{
-		{"cd finally/mayor/rig/frontend && npm install", false},
-		{"cd finally/mayor/rig/frontend && npm ci", false},
-		{"cd app && npm install", false},
-		{"npm install", true},
-		{"cd finally/mayor/rig && npm install", true},
-		{"cd finally/mayor/rig && yarn install", true},
-		{"cd finally/mayor/rig/finally && npm install", false},
+		{"cd finally/mayor/rig/frontend && npm install", ".", false},
+		{"cd finally/mayor/rig/frontend && npm ci", ".", false},
+		{"cd app && npm install", ".", false},
+		{"npm install", ".", true},
+		{"cd finally/mayor/rig && npm install", ".", true},
+		{"cd finally/mayor/rig && yarn install", ".", true},
+		{"cd finally/mayor/rig/finally && npm install", ".", false},
+		{"cd finally/mayor/rig/finally && npm install", "finally", false},
+		{"cd tasktracker/mayor/rig/taskboard && npm install --no-audit --no-fund && ./node_modules/.bin/playwright --version", "taskboard", false},
+		{"cd taskboard && npm install", "taskboard", false},
 	}
 	for _, tc := range cases {
-		err := RejectMayorRigRootShellCommand(tc.cmd, ".")
+		err := RejectMayorRigRootShellCommand(tc.cmd, tc.layoutRoot)
 		got := err != nil
 		if got != tc.want {
-			t.Errorf("RejectMayorRigRootShellCommand(%q) rejected=%v, want %v (err=%v)", tc.cmd, got, tc.want, err)
+			t.Errorf("RejectMayorRigRootShellCommand(%q, %q) rejected=%v, want %v (err=%v)", tc.cmd, tc.layoutRoot, got, tc.want, err)
 		}
 	}
 }

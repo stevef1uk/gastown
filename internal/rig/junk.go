@@ -182,8 +182,8 @@ func RejectMayorRigRootShellCommand(cmd, layoutRoot string) error {
 
 // runsInSubdirectory reports whether a command explicitly cds into a
 // subdirectory before running a package-manager or similar command.
-// It treats "cd frontend && npm install" as subdirectory, but
-// "cd .", "cd mayor/rig", or "cd <layoutRoot>" as still root-level.
+// It treats "cd frontend && npm install" or "cd <rig>/mayor/rig/<layout> && npm install"
+// as subdirectory, but "cd .", "cd mayor/rig", or "cd <rig>/mayor/rig" as root-level.
 func runsInSubdirectory(lower, layoutRoot string) bool {
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(layoutRoot)), "/")
 	cleaned := strings.ReplaceAll(lower, "&&", ";")
@@ -195,26 +195,16 @@ func runsInSubdirectory(lower, layoutRoot string) bool {
 		}
 		target := strings.TrimSpace(strings.TrimPrefix(part, "cd "))
 		target = strings.Trim(target, "'\"")
+		target = filepath.ToSlash(filepath.Clean(target))
 		if target == "" || target == "." {
 			continue
 		}
 		// cd into a path that ends at the rig root is still root-level.
-		if strings.HasSuffix(target, "/mayor/rig") || strings.HasSuffix(target, "/mayor/rig/") {
+		if strings.HasSuffix(target, "/mayor/rig") || target == "mayor/rig" {
 			continue
 		}
-		// cd into the layout root from town root is still root-level,
-		// BUT cd into layout root from mayor/rig IS a subdirectory (allowed).
-		// Detect if target is exactly the layout root name (e.g., "finally").
-		if layout != "" && layout != "." && target == layout {
-			return true
-		}
-		// cd into layout root with full path (e.g., "finally/mayor/rig/finally")
-		if layout != "" && layout != "." && strings.HasSuffix(target, "/"+layout) {
-			// If it includes /mayor/rig/, it's from town root → root-level.
-			// If it's just layout (e.g., "finally") or "path/layout", it's from mayor/rig → subdirectory.
-			if strings.Contains(target, "/mayor/rig/") {
-				continue
-			}
+		// cd into layout root or any subdirectory is allowed.
+		if layout != "" && layout != "." && (target == layout || strings.HasSuffix(target, "/"+layout)) {
 			return true
 		}
 		// Anything else is a subdirectory.
