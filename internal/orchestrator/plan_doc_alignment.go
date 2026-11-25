@@ -407,10 +407,22 @@ func checkDocumentedRoutesSubsetOfSPEC(docName, doc, specDoc string, v WorkflowV
 		if path == "" || path == "/" || specPaths[path] || seen[path] {
 			continue
 		}
+		if strings.HasPrefix(path, "/static") && (strings.Contains(specDoc, "/static") || validationHasStaticFile(v)) {
+			continue
+		}
 		seen[path] = true
 		issues = append(issues, fmt.Sprintf("%s documents HTTP path %s not present in SPEC (canonical: %s)", docName, path, joinSortedPathKeys(specPaths)))
 	}
 	return issues
+}
+
+func validationHasStaticFile(v WorkflowValidation) bool {
+	for _, f := range v.UnionRequiredFiles() {
+		if strings.Contains(f, "/static/") || strings.Contains(f, "static.") {
+			return true
+		}
+	}
+	return false
 }
 
 func profileRequiredFilesUseLayoutPrefix(v WorkflowValidation, layout string) bool {
