@@ -115,7 +115,7 @@ func ReopenImplementationBeadsAfterQAFailure(townRoot, rig string, v WorkflowVal
 	known, _, _ := ListRigBeadIDSet(townRoot, rig)
 	citedIDs := ExtractKnownRigBeadIDsFromSummary(summary, prefix, known)
 	if qaFailed && len(citedIDs) > 0 {
-		more, err := reopenClosedImplementBeadsForIDs(townRoot, rig, v, citedIDs)
+		more, err := reopenClosedImplementBeadsForIDs(townRoot, rig, v.ForActivePhase(), citedIDs)
 		if err != nil {
 			return reopened, err
 		}

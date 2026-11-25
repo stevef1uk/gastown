@@ -9,6 +9,7 @@ import (
 type ImplementWriteScope struct {
 	QAReworkFromQAReview bool
 	QACitedBeadIDs       map[string]bool // lowercase rig-prefixed ids from QA summary (te-*, de-*, …)
+	QACitedPaths         map[string]bool // normalized paths from QA summary or findings
 }
 
 // QAReworkWriteScopeFromTransition builds write/reopen scope when QA sent the workflow back to implementation.
@@ -17,8 +18,17 @@ func QAReworkWriteScopeFromTransition(townRoot, rig, fromState, toState, summary
 		return ImplementWriteScope{}
 	}
 	var ids []string
+	citedPaths := make(map[string]bool)
 	if report, ok := ParseQAFailureReport(summary); ok {
 		ids = qaFailureRepairBeadIDs(report)
+		for _, f := range report.Findings {
+			for _, p := range f.Paths {
+				p = filepath.ToSlash(strings.TrimSpace(p))
+				if p != "" {
+					citedPaths[p] = true
+				}
+			}
+		}
 	} else {
 		if IsQAAgentShellError(summary) {
 			return ImplementWriteScope{}
@@ -29,7 +39,7 @@ func QAReworkWriteScopeFromTransition(townRoot, rig, fromState, toState, summary
 		}
 		ids = ExtractKnownRigBeadIDsFromSummary(summary, prefix, known)
 	}
-	if len(ids) == 0 {
+	if len(ids) == 0 && len(citedPaths) == 0 {
 		return ImplementWriteScope{}
 	}
 	cited := make(map[string]bool, len(ids))
@@ -39,6 +49,7 @@ func QAReworkWriteScopeFromTransition(townRoot, rig, fromState, toState, summary
 	return ImplementWriteScope{
 		QAReworkFromQAReview: true,
 		QACitedBeadIDs:       cited,
+		QACitedPaths:         citedPaths,
 	}
 }
 
@@ -48,6 +59,20 @@ func (s ImplementWriteScope) BeadCited(id string) bool {
 		return false
 	}
 	return s.QACitedBeadIDs[strings.ToLower(strings.TrimSpace(id))]
+}
+
+// PathCited reports whether path (normalized) was named in the QA failure summary or findings.
+func (s ImplementWriteScope) PathCited(path string) bool {
+	if len(s.QACitedPaths) == 0 {
+		return false
+	}
+	norm := filepath.ToSlash(strings.TrimSpace(path))
+	for p := range s.QACitedPaths {
+		if norm == p || strings.HasSuffix(norm, "/"+p) || strings.HasSuffix(p, "/"+norm) {
+			return true
+		}
+	}
+	return false
 }
 
 func IsFrontendImplementPath(path string) bool {
@@ -89,7 +114,7 @@ func IsE2ETestPath(path string) bool {
 // AllowedQAReworkWebImplementWrite allows editing cited web/ files across beads after QA failure
 // (e.g. align index.html and app.js when QA names both), even when one implement bead is closed.
 func AllowedQAReworkWebImplementWrite(townRoot, rig, activeBead, activePath, written string, scope ImplementWriteScope, v WorkflowValidation) bool {
-	if !scope.QAReworkFromQAReview || len(scope.QACitedBeadIDs) == 0 {
+	if !scope.QAReworkFromQAReview || (len(scope.QACitedBeadIDs) == 0 && len(scope.QACitedPaths) == 0) {
 		return false
 	}
 	activePath = filepath.ToSlash(strings.TrimSpace(activePath))
@@ -97,8 +122,15 @@ func AllowedQAReworkWebImplementWrite(townRoot, rig, activeBead, activePath, wri
 	if !IsFrontendImplementPath(written) {
 		return false
 	}
-	if !pathMatchesRequired(written, v.RequiredFiles) {
+	required := v.RequiredFiles
+	if v.HasPhasedDelivery() {
+		required = v.UnionRequiredFiles()
+	}
+	if !pathMatchesRequired(written, required) {
 		return false
+	}
+	if scope.PathCited(written) {
+		return true
 	}
 	if activePath != "" && !IsFrontendImplementPath(activePath) {
 		return false
@@ -107,7 +139,7 @@ func AllowedQAReworkWebImplementWrite(townRoot, rig, activeBead, activePath, wri
 		for citedID := range scope.QACitedBeadIDs {
 			p := ImplementBeadPathForID(townRoot, rig, citedID, v)
 			if p != "" && IsFrontendImplementPath(p) &&
-				PathMatchesImplementWrite(written, p, v.RequiredFiles, v) {
+				PathMatchesImplementWrite(written, p, required, v) {
 				return true
 			}
 		}

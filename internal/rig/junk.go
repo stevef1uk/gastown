@@ -108,9 +108,41 @@ func RemoveMayorRigAgentJunkLog(mayorRigDir string) (string, error) {
 	return fmt.Sprintf("removed rig-root junk: %s", strings.Join(removed, ", ")), nil
 }
 
+var heredocStartRE = regexp.MustCompile(`<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
+
+// stripHeredocBodies removes the content of shell heredocs (e.g. cat <<'EOF' ... EOF)
+// so markdown text or documentation inside file-writing commands is not mistaken for
+// shell commands to be executed at mayor/rig root.
+func stripHeredocBodies(cmd string) string {
+	if !strings.Contains(cmd, "<<") {
+		return cmd
+	}
+	lines := strings.Split(cmd, "\n")
+	var out []string
+	var delim string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if delim != "" {
+			if trimmed == delim {
+				delim = ""
+				out = append(out, line)
+			}
+			continue
+		}
+		if m := heredocStartRE.FindStringSubmatch(line); len(m) > 1 {
+			delim = m[1]
+			out = append(out, line)
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
 // RejectMayorRigRootShellCommand blocks npm/jest/python-venv scaffolding at mayor/rig root.
 func RejectMayorRigRootShellCommand(cmd, layoutRoot string) error {
-	lower := strings.ToLower(strings.TrimSpace(cmd))
+	cmdWithoutHeredocs := stripHeredocBodies(cmd)
+	lower := strings.ToLower(strings.TrimSpace(cmdWithoutHeredocs))
 	if lower == "" {
 		return nil
 	}

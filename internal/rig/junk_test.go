@@ -102,3 +102,11 @@ func TestRejectMayorRigRootShellCommand_blocksCircularSymlink(t *testing.T) {
 		}
 	}
 }
+
+func TestRejectMayorRigRootShellCommand_allowsNpmInHeredoc(t *testing.T) {
+	t.Parallel()
+	heredocCmd := "cd tasktracker/mayor/rig && cat > plan.md <<'EOF'\n# Plan\nRun npm ci to install deps\nEOF\nwc -c plan.md"
+	if err := RejectMayorRigRootShellCommand(heredocCmd, "taskboard"); err != nil {
+		t.Errorf("expected heredoc containing npm ci to not be rejected, got: %v", err)
+	}
+}

@@ -64,3 +64,45 @@ func TestAllowedQAReworkWebImplementWrite_crossBead(t *testing.T) {
 		t.Fatalf("ValidateImplementWritePath: %v", err)
 	}
 }
+
+func TestAllowedQAReworkWebImplementWrite_citedPathPhasedDelivery(t *testing.T) {
+	v := WorkflowValidation{
+		LayoutRoot:        "taskboard",
+		BeadTitleContains: "Implement taskboard/",
+		RequiredFiles: []string{
+			"taskboard/web/static/app.js",
+			"taskboard/web/static/style.css",
+			"taskboard/internal/web/app_test.go",
+			"taskboard/internal/web/ui_content_test.go",
+		},
+		DeliveryPhases: []DeliveryPhase{
+			{
+				ID: "phase-1-app",
+				RequiredFiles: []string{
+					"taskboard/web/templates/index.html",
+				},
+			},
+			{
+				ID: "phase-2-kanban",
+				RequiredFiles: []string{
+					"taskboard/web/static/app.js",
+					"taskboard/web/static/style.css",
+					"taskboard/internal/web/app_test.go",
+					"taskboard/internal/web/ui_content_test.go",
+				},
+			},
+		},
+		ActivePhaseIDField: "phase-2-kanban",
+	}
+
+	scope := ImplementWriteScope{
+		QAReworkFromQAReview: true,
+		QACitedPaths: map[string]bool{
+			"taskboard/web/templates/index.html": true,
+		},
+	}
+
+	if !AllowedQAReworkWebImplementWrite("/town", "tasktracker", "ta-kf2", "taskboard/internal/web/ui_content_test.go", "taskboard/web/templates/index.html", scope, v) {
+		t.Fatal("QA rework should allow editing index.html from earlier phase when cited by path in QA findings")
+	}
+}
