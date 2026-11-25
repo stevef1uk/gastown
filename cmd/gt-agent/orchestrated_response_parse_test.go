@@ -358,6 +358,15 @@ func TestUnwrapMarkdownFencedToolBlocks_pythonCMD(t *testing.T) {
 	}
 }
 
+func TestUnwrapMarkdownFencedToolBlocks_boldCmdBashFence(t *testing.T) {
+	t.Parallel()
+	in := "**CMD:**\n```bash\ncd testgt4/mayor/rig && bd list --status=open\n```\n"
+	cmds := parseOrchestratedCommands(in)
+	if len(cmds) != 1 || !strings.Contains(cmds[0], "bd list --status=open") {
+		t.Fatalf("expected 1 command, got %v", cmds)
+	}
+}
+
 func TestUnwrapMarkdownFencedToolBlocks_goEDIT(t *testing.T) {
 	t.Parallel()
 	in := "```go\nEDIT: linkshelf/internal/api/handlers_test.go\n<<<<<<< SEARCH\nx\n=======\ny\n>>>>>>> REPLACE\n```\n"

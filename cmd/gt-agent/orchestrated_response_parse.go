@@ -661,9 +661,18 @@ func unwrapMarkdownFencedToolBlocks(response string) string {
 				}
 				continue
 			}
-				if isMarkdownToolFenceLang(inner) || upper == "CMD" {
+				prevIsBareCMD := false
+				if len(out) > 0 && strings.TrimSpace(out[len(out)-1]) == "CMD:" {
+					prevIsBareCMD = true
+					out = out[:len(out)-1]
+				}
+				if isMarkdownToolFenceLang(inner) || upper == "CMD" || prevIsBareCMD {
 					inFence = true
-					fenceLang = upper
+					if prevIsBareCMD || upper == "CMD" {
+						fenceLang = "CMD"
+					} else {
+						fenceLang = upper
+					}
 					continue
 				}
 			}
@@ -676,7 +685,11 @@ func unwrapMarkdownFencedToolBlocks(response string) string {
 			continue
 		}
 		if fenceLang == "CMD" {
-			out = append(out, "CMD: "+line)
+			if !strings.HasPrefix(trimmed, "CMD:") {
+				out = append(out, "CMD: "+line)
+			} else {
+				out = append(out, line)
+			}
 		} else {
 			out = append(out, line)
 		}
