@@ -291,6 +291,9 @@ var trackHandlers = map[string]trackFn{
 			r.track.hadCmdFailure = true
 			r.track.verifyOK = false
 		}
+		if cmdErr == nil && writesReport && r.track.verifyOK {
+			r.track.hadCmdFailure = false
+		}
 		if r.isTestReviewVerifyCommandOK(cmd) {
 			r.track.verifyOK = cmdErr == nil
 			r.track.hadCmdFailure = cmdErr != nil

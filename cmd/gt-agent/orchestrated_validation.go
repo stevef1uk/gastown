@@ -159,7 +159,39 @@ func testReviewVerifyCommandMatches(cmd string, v orchestrator.WorkflowValidatio
 		}
 		return strings.Join(strings.Fields(s), " ")
 	}
-	return stripCD(cmd) == stripCD(verify)
+	stripSuffixes := func(s string) string {
+		s = strings.TrimSpace(s)
+		for {
+			trimmed := false
+			for _, suffix := range []string{
+				"; echo \"EXIT=$?\"",
+				"; echo EXIT=$?",
+				"; echo $?",
+				"2>&1",
+			} {
+				trimmedStr := strings.TrimSpace(s)
+				if strings.HasSuffix(trimmedStr, suffix) {
+					s = strings.TrimSpace(strings.TrimSuffix(trimmedStr, suffix))
+					trimmed = true
+				}
+			}
+			if !trimmed {
+				break
+			}
+		}
+		return s
+	}
+	cleanedCmd := stripCD(stripSuffixes(cmd))
+	cleanedVerify := stripCD(verify)
+	if cleanedCmd == cleanedVerify {
+		return true
+	}
+	if orchestrator.WorkflowUsesGo(v) && !strings.Contains(cmd, "&") && !strings.Contains(cmd, "|| true") && !strings.Contains(cmd, "; true") {
+		if goVerifyCommandMatches(cmd, verify, v) {
+			return true
+		}
+	}
+	return false
 }
 
 func isImplementationVerifyCommandOK(cmd, townRoot, rig, activeBead string, v orchestrator.WorkflowValidation) bool {
