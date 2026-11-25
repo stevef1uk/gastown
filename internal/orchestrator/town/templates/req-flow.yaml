@@ -88,6 +88,8 @@ states:
          file layout, phases, testing strategy, seed data, and non-functional requirements.
       4. Report success only when nothing is missing. Report failure with a specific list of gaps.
     hooks:
+      review_failure_limit: 3
+      review_recovery_state: review_recovery
       max_cmd_turns: 15
       cmd_guard: spec_review
       cmd_rewrites: [rig_placeholders, unwrap_bash_lc]
@@ -141,6 +143,8 @@ states:
       6. Report success only when the design doc is clean and consistent; failure if it is missing or inconsistent.
     hooks:
       prompt_context: [spec_runtime_commands]
+      review_failure_limit: 3
+      review_recovery_state: review_recovery
       max_cmd_turns: 10
       cmd_guard: design_review
       cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, unwrap_bash_lc]
@@ -309,6 +313,8 @@ states:
       3. Confirm test levels match the plan and active-phase Bead IDs exist in `bd list --status=open,in_progress` (completed/future phases may have blank or closed Bead IDs).
       4. Report success only when the test plan is complete and SPEC-aligned; failure sends the tester back to rewrite TEST_PLAN.md.
     hooks:
+      review_failure_limit: 3
+      review_recovery_state: review_recovery
       max_cmd_turns: 15
       cmd_guard: design_review
       cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, test_plan_md_after_cd, bd_list_limit, unwrap_bash_lc]
