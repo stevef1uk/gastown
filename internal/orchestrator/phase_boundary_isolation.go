@@ -24,42 +24,44 @@ func EnsurePhaseBoundaryIsolation(townRoot, rig string, v WorkflowValidation) (i
 
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	stashBase := filepath.Join(rigDir, ".gastown", "phase-stash")
-	activePhase := v.DeliveryPhases[activeIdx]
 
-	// 1. Restore any files stashed for the active delivery phase.
-	activeStashDir := filepath.Join(stashBase, activePhase.ID)
-	if info, statErr := os.Stat(activeStashDir); statErr == nil && info.IsDir() {
-		walkErr := filepath.WalkDir(activeStashDir, func(path string, d fs.DirEntry, werr error) error {
-			if werr != nil || d.IsDir() {
-				return werr
-			}
-			rel, relErr := filepath.Rel(activeStashDir, path)
-			if relErr != nil {
-				return relErr
-			}
-			dest := filepath.Join(rigDir, rel)
-			if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-				return err
-			}
-			if err := os.Rename(path, dest); err != nil {
-				// Fallback to copy+remove if rename fails across devices
-				data, readErr := os.ReadFile(path)
-				if readErr != nil {
-					return readErr
+	// 1. Restore any files stashed for active or completed delivery phases.
+	for i := 0; i <= activeIdx; i++ {
+		phase := v.DeliveryPhases[i]
+		phaseStashDir := filepath.Join(stashBase, phase.ID)
+		if info, statErr := os.Stat(phaseStashDir); statErr == nil && info.IsDir() {
+			walkErr := filepath.WalkDir(phaseStashDir, func(path string, d fs.DirEntry, werr error) error {
+				if werr != nil || d.IsDir() {
+					return werr
 				}
-				if writeErr := os.WriteFile(dest, data, 0644); writeErr != nil {
-					return writeErr
+				rel, relErr := filepath.Rel(phaseStashDir, path)
+				if relErr != nil {
+					return relErr
 				}
-				_ = os.Remove(path)
+				dest := filepath.Join(rigDir, rel)
+				if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+					return err
+				}
+				if err := os.Rename(path, dest); err != nil {
+					// Fallback to copy+remove if rename fails across devices
+					data, readErr := os.ReadFile(path)
+					if readErr != nil {
+						return readErr
+					}
+					if writeErr := os.WriteFile(dest, data, 0644); writeErr != nil {
+						return writeErr
+					}
+					_ = os.Remove(path)
+				}
+				restored = append(restored, filepath.ToSlash(rel))
+				return nil
+			})
+			if walkErr != nil {
+				return isolated, restored, walkErr
 			}
-			restored = append(restored, filepath.ToSlash(rel))
-			return nil
-		})
-		if walkErr != nil {
-			return isolated, restored, walkErr
+			// Clean up empty directories in stash
+			_ = os.RemoveAll(phaseStashDir)
 		}
-		// Clean up empty directories in stash
-		_ = os.RemoveAll(activeStashDir)
 	}
 
 	// 2. Identify all files required by completed and current phases.
