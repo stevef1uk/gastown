@@ -77,3 +77,25 @@ func withEnvKey(env []string, key, value string) []string {
 	}
 	return append(out, prefix+value)
 }
+
+// PrependEnvPath prepends dir to key in env (colon-separated path list).
+func PrependEnvPath(env []string, key, dir string) []string {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return env
+	}
+	prefix := key + "="
+	for i, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			rest := strings.TrimPrefix(e, prefix)
+			if rest == "" {
+				env[i] = prefix + dir
+				return env
+			}
+			env[i] = prefix + dir + string(os.PathListSeparator) + rest
+			return env
+		}
+	}
+	return append(env, prefix+dir)
+}
+

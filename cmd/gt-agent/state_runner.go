@@ -626,7 +626,9 @@ func (r *stateRunner) applyPythonVenvEnv(env []string, workDir string) []string 
 		return r.ensureRigVenvEnv(env, workDir, venvRel)
 	case "activate":
 		if r.hooks.Env.PythonPATH {
-			env = prependEnvPath(env, "PYTHONPATH", workDir)
+			for _, d := range orchestrator.PythonPathDirs(workDir, r.v.LayoutRoot) {
+				env = prependEnvPath(env, "PYTHONPATH", d)
+			}
 		}
 		venvPy := agentenv.VenvPython(workDir, venvRel)
 		if !isExecutablePath(venvPy) {

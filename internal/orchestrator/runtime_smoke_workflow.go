@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/agentenv"
 )
 
 var (
@@ -314,13 +316,21 @@ func pythonVerificationEnv(rigDir string, v WorkflowValidation) []string {
 		return env
 	}
 	venvBin := filepath.Join(rigDir, v.PythonVenvRelDir(), "bin")
+	foundPath := false
 	for i, entry := range env {
 		if strings.HasPrefix(entry, "PATH=") {
 			env[i] = "PATH=" + venvBin + string(os.PathListSeparator) + entry[5:]
-			return env
+			foundPath = true
+			break
 		}
 	}
-	return append(env, "PATH="+venvBin)
+	if !foundPath {
+		env = append(env, "PATH="+venvBin)
+	}
+	for _, d := range PythonPathDirs(rigDir, v.LayoutRoot) {
+		env = agentenv.PrependEnvPath(env, "PYTHONPATH", d)
+	}
+	return env
 }
 
 // PythonVerifyNoTestsOK reports whether a failed pytest run is acceptable because

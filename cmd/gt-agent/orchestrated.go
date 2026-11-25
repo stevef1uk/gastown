@@ -2932,17 +2932,7 @@ func maybeRepairWorkflowRequirements(townRoot, rig string, v orchestrator.Workfl
 }
 
 func prependEnvPath(env []string, key, dir string) []string {
-	prefix := key + "="
-	for _, e := range env {
-		if strings.HasPrefix(e, prefix) {
-			rest := strings.TrimPrefix(e, prefix)
-			if rest == "" {
-				return withEnvKey(env, key, dir)
-			}
-			return withEnvKey(env, key, dir+string(os.PathListSeparator)+rest)
-		}
-	}
-	return append(env, prefix+dir)
+	return agentenv.PrependEnvPath(env, key, dir)
 }
 
 func withEnvKey(env []string, key, value string) []string {

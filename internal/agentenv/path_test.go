@@ -39,3 +39,17 @@ func TestEnsurePATH_preservesExtra(t *testing.T) {
 		t.Fatalf("PATH %q missing GT_PATH_EXTRA", path)
 	}
 }
+
+func TestPrependEnvPath(t *testing.T) {
+	env := []string{"FOO=bar"}
+	env = PrependEnvPath(env, "PYTHONPATH", "/dir/a")
+	if len(env) != 2 || env[1] != "PYTHONPATH=/dir/a" {
+		t.Fatalf("expected new key appended: %v", env)
+	}
+	env = PrependEnvPath(env, "PYTHONPATH", "/dir/b")
+	want := "PYTHONPATH=/dir/b" + string(os.PathListSeparator) + "/dir/a"
+	if env[1] != want {
+		t.Fatalf("expected prepended: got %q, want %q", env[1], want)
+	}
+}
+

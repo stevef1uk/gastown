@@ -153,6 +153,35 @@ func IsPythonImportCheckCommand(cmd string) bool {
 	return strings.Contains(lower, "-c ") && strings.Contains(lower, "import pytest")
 }
 
+// PythonPathDirs returns existing directories that should be added to PYTHONPATH
+// for a Python rig (rig root, layout root, and backend/src subdirectories).
+func PythonPathDirs(workDir, layoutRoot string) []string {
+	var dirs []string
+	seen := make(map[string]bool)
+	add := func(p string) {
+		p = filepath.Clean(strings.TrimSpace(p))
+		if p == "" || seen[p] {
+			return
+		}
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
+			seen[p] = true
+			dirs = append(dirs, p)
+		}
+	}
+	add(workDir)
+
+	layoutRoot = strings.Trim(strings.TrimSpace(layoutRoot), "/")
+	if layoutRoot != "" && layoutRoot != "." {
+		add(filepath.Join(workDir, layoutRoot))
+		add(filepath.Join(workDir, layoutRoot, "backend"))
+		add(filepath.Join(workDir, layoutRoot, "src"))
+	}
+	add(filepath.Join(workDir, "backend"))
+	add(filepath.Join(workDir, "src"))
+
+	return dirs
+}
+
 // PythonVerifyCommand returns the verify shell chain for Python rigs (QA/implementation).
 func PythonVerifyCommand(v WorkflowValidation) string {
 	base := strings.TrimSpace(v.QAVerifyCommand)

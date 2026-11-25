@@ -107,16 +107,26 @@ func isPythonVerifyCommand(cmd string) bool {
 	return strings.Contains(lower, "compileall") || strings.Contains(lower, "pytest")
 }
 
+func cleanVerifyTarget(p string) string {
+	p = strings.TrimSpace(p)
+	p = strings.Trim(p, "()[]{}\"'` ;,|&")
+	return p
+}
+
 func pythonVerifyTargetMatchesActiveBead(target, beadPath string, v orchestrator.WorkflowValidation) bool {
+	target = cleanVerifyTarget(target)
+	beadPath = strings.TrimSpace(beadPath)
 	if target == "" || beadPath == "" {
 		return false
 	}
 	if strings.HasPrefix(target, beadPath) || strings.HasPrefix(beadPath, target) ||
+		strings.HasSuffix(beadPath, "/"+target) || strings.HasSuffix(target, "/"+beadPath) ||
 		orchestrator.PathMatchesImplementFile(target, beadPath) {
 		return true
 	}
 	if corrTestPath := orchestrator.CorrelatedTestPathForSource(beadPath, v); corrTestPath != "" {
 		if strings.HasPrefix(target, corrTestPath) || strings.HasPrefix(corrTestPath, target) ||
+			strings.HasSuffix(corrTestPath, "/"+target) || strings.HasSuffix(target, "/"+corrTestPath) ||
 			orchestrator.PathMatchesImplementFile(target, corrTestPath) {
 			return true
 		}
@@ -131,13 +141,14 @@ func pythonVerifyTarget(cmd string) string {
 	if strings.Contains(strings.ToLower(cmd), "compileall") {
 		for i, p := range parts {
 			if p == "-q" && i+1 < len(parts) {
-				return parts[i+1]
+				return cleanVerifyTarget(parts[i+1])
 			}
 		}
 		// Fallback: last non-flag argument
 		for i := len(parts) - 1; i >= 0; i-- {
-			if !strings.HasPrefix(parts[i], "-") {
-				return parts[i]
+			cleaned := cleanVerifyTarget(parts[i])
+			if !strings.HasPrefix(cleaned, "-") && cleaned != "" {
+				return cleaned
 			}
 		}
 		return ""
@@ -145,18 +156,19 @@ func pythonVerifyTarget(cmd string) string {
 	if strings.Contains(strings.ToLower(cmd), "pytest") {
 		afterPytest := false
 		for _, p := range parts {
-			if p == "pytest" || p == "-m" {
+			cleaned := cleanVerifyTarget(p)
+			if cleaned == "pytest" || cleaned == "-m" {
 				afterPytest = true
 				continue
 			}
 			if !afterPytest {
 				continue
 			}
-			if strings.HasPrefix(p, "-") {
+			if strings.HasPrefix(cleaned, "-") {
 				continue
 			}
-			if strings.Contains(p, "/") || strings.HasSuffix(p, ".py") || strings.HasSuffix(p, ".pyx") {
-				return p
+			if strings.Contains(cleaned, "/") || strings.HasSuffix(cleaned, ".py") || strings.HasSuffix(cleaned, ".pyx") {
+				return cleaned
 			}
 		}
 		return ""
@@ -198,6 +210,10 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 		return fmt.Errorf("do not create Python virtual environments in implementation — project_setup already created one at %s", v.PythonVenvRelDir())
 	}
 	if activeBead != "" && isPythonVerifyCommand(cmd) {
+		if phaseQA := strings.TrimSpace(v.ActivePhaseQAVerifyCommand()); phaseQA != "" && (strings.Contains(cmd, phaseQA) || testReviewVerifyCommandMatches(cmd, v)) {
+			// Phase QA verify command is always allowed to verify
+			return nil
+		}
 		beadPath := orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
 		if beadPath != "" {
 			target := pythonVerifyTarget(cmd)
