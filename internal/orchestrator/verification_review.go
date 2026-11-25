@@ -141,6 +141,8 @@ func normalizeVerificationReviewResult(townRoot, rig string, v WorkflowValidatio
 		return invalid(err.Error())
 	}
 	known := map[string]bool{}
+	pathToID := map[string]string{}
+	titleToID := map[string]string{}
 	activePhaseIndex := v.ActivePhaseIndex()
 	for _, status := range []string{"closed", "open", "in_progress"} {
 		beads, err := listImplementBeadsForGuard(townRoot, rig, v, status)
@@ -156,16 +158,50 @@ func normalizeVerificationReviewResult(townRoot, rig string, v WorkflowValidatio
 			}
 			if inScope {
 				known[bead.ID] = true
+				titleToID[bead.Title] = bead.ID
+				titleToID[strings.TrimSpace(bead.Title)] = bead.ID
+				if path != "" {
+					pathToID[path] = bead.ID
+					titleToID["Implement "+path] = bead.ID
+					titleToID[path] = bead.ID
+				}
 			}
 		}
+	}
+	resolveBeadID := func(raw string) string {
+		raw = strings.TrimSpace(raw)
+		if known[raw] {
+			return raw
+		}
+		if id, ok := titleToID[raw]; ok {
+			return id
+		}
+		if id, ok := pathToID[raw]; ok {
+			return id
+		}
+		if p := ExtractPathFromBeadTitle(raw, v.BeadTitleContains); p != "" {
+			p = NormalizePlannerBeadPath(p, v.LayoutRoot, rig)
+			if id, ok := pathToID[p]; ok {
+				return id
+			}
+		}
+		return ""
 	}
 	if len(report.Findings) > 0 {
 		var inScopeFindings []QAFinding
 		for _, f := range report.Findings {
 			var validIDs []string
 			for _, id := range f.RepairBeadIDs {
-				if known[id] {
-					validIDs = append(validIDs, id)
+				if realID := resolveBeadID(id); realID != "" {
+					validIDs = append(validIDs, realID)
+				}
+			}
+			if len(validIDs) == 0 {
+				for _, p := range f.Paths {
+					p = NormalizePlannerBeadPath(p, v.LayoutRoot, rig)
+					if realID, ok := pathToID[p]; ok {
+						validIDs = append(validIDs, realID)
+					}
 				}
 			}
 			if len(validIDs) > 0 {
@@ -180,8 +216,8 @@ func normalizeVerificationReviewResult(townRoot, rig string, v WorkflowValidatio
 		if len(report.RepairBeadIDs) > 0 {
 			var validTopIDs []string
 			for _, id := range report.RepairBeadIDs {
-				if known[id] {
-					validTopIDs = append(validTopIDs, id)
+				if realID := resolveBeadID(id); realID != "" {
+					validTopIDs = append(validTopIDs, realID)
 				}
 			}
 			report.RepairBeadIDs = validTopIDs
@@ -191,9 +227,19 @@ func normalizeVerificationReviewResult(townRoot, rig string, v WorkflowValidatio
 			summary = string(cleanBytes)
 		}
 	} else {
+		var validTopIDs []string
 		for _, id := range qaFailureRepairBeadIDs(report) {
-			if !known[id] {
+			if realID := resolveBeadID(id); realID != "" {
+				validTopIDs = append(validTopIDs, realID)
+			} else {
 				return invalid(fmt.Sprintf("%q is not a canonical current-or-completed-phase implementation bead", id))
+			}
+		}
+		if len(validTopIDs) > 0 {
+			report.RepairBeadIDs = validTopIDs
+			cleanBytes, err := json.Marshal(report)
+			if err == nil {
+				summary = string(cleanBytes)
 			}
 		}
 	}
