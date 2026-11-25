@@ -92,9 +92,9 @@ Planner. Do not send plan-only defects to the Architect.
 
 1. **One `CMD:` per line** — read-only inspection only.
 
-2. List open/in_progress implementation beads:
+2. List open/in_progress/closed implementation beads:
    ```
-   CMD: cd {{rig}}/mayor/rig && bd list --status=open,in_progress --limit=0
+   CMD: cd {{rig}}/mayor/rig && bd list --status=open,in_progress,closed --limit=0
    ```
 
 3. Read all three design docs:

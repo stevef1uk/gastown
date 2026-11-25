@@ -4148,6 +4148,9 @@ func isWebTestOrConfigArtifact(rel string) bool {
 	if strings.HasPrefix(base, "playwright.config.") {
 		return true
 	}
+	if strings.HasSuffix(base, ".d.ts") {
+		return true
+	}
 	switch {
 	case strings.Contains(path, "/test/"),
 		strings.Contains(path, "/tests/"),

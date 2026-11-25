@@ -408,3 +408,16 @@ func TestValidateQAArtifacts_requiresRuntimeSmokeWhenProfileHasWebAPI(t *testing
 		t.Fatalf("expected live smoke requirement this session, got: %v", err)
 	}
 }
+
+func TestIsWebTestOrConfigArtifact_typeScriptDeclarationFiles(t *testing.T) {
+	for _, path := range []string{
+		"finally/frontend/next-env.d.ts",
+		"src/vite-env.d.ts",
+		"types/global.d.ts",
+		"app/declarations.d.ts",
+	} {
+		if !isWebTestOrConfigArtifact(path) {
+			t.Errorf("expected isWebTestOrConfigArtifact(%q) = true, got false", path)
+		}
+	}
+}
