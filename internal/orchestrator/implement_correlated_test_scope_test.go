@@ -40,6 +40,33 @@ func TestValidateImplementWritePath_testBeadAllowsCorrelatedProduction(t *testin
 	}
 }
 
+func TestValidateImplementWritePath_pythonTestBeadAllowsCorrelatedProduction(t *testing.T) {
+	dir := t.TempDir()
+	rig := "mockrig"
+	v := DefaultWorkflowValidation()
+	v.LayoutRoot = "finally"
+	v.TestRunner = "pytest"
+	v.QAVerifyCommand = "pytest finally/backend/app/main_test.py"
+	v.RequiredFiles = []string{
+		"finally/backend/app/main.py",
+		"finally/backend/app/main_test.py",
+	}
+	setListImplementBeadsByStatusHook(t, dir, rig, func(_, _ string, _ WorkflowValidation, status string) ([]PlanBead, error) {
+		switch status {
+		case "closed":
+			return []PlanBead{{ID: "te-m", Title: "Implement finally/backend/app/main.py per architecture"}}, nil
+		case "in_progress":
+			return []PlanBead{{ID: "te-mt", Title: "Implement finally/backend/app/main_test.py per architecture"}}, nil
+		default:
+			return nil, nil
+		}
+	})
+	err := ValidateImplementWritePath(dir, rig, "te-mt", "finally/backend/app/main.py", v, true, "assert 404 == 503", nil)
+	if err != nil {
+		t.Fatalf("python test bead should allow editing correlated main.py: %v", err)
+	}
+}
+
 func TestValidateImplementReadPath_correlatedGoTest(t *testing.T) {
 	dir := t.TempDir()
 	rig := "mockrig"

@@ -2362,7 +2362,8 @@ func validateImplementationBeadFileWrite(cmd, townRoot, rig, activeBead string, 
 		allowedID = next.ID
 	}
 	allowedPath := orchestrator.ImplementBeadPathForID(townRoot, rig, allowedID, v)
-	if closedOnly, err := orchestrator.ImplementPathHasOnlyClosedBeads(townRoot, rig, written, v); err == nil && closedOnly {
+	if closedOnly, err := orchestrator.ImplementPathHasOnlyClosedBeads(townRoot, rig, written, v); err == nil && closedOnly &&
+		!orchestrator.AllowedCorrelatedPackageImplementWrite(allowedPath, written, v) {
 		var sc orchestrator.ImplementWriteScope
 		if scope != nil {
 			sc = *scope

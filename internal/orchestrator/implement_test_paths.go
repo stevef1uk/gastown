@@ -208,13 +208,68 @@ func OpenBeadIDForPath(townRoot, rig, path string, v WorkflowValidation) string 
 	return ""
 }
 
-// AllowedCorrelatedPackageImplementWrite allows editing the paired production or *_test.go
-// file in the same Go package while a different implement bead is active (e.g. fix handlers.go
-// while working the handlers_test.go bead so go test ./internal/api/... compiles).
-func AllowedCorrelatedPackageImplementWrite(activePath, writtenPath string, v WorkflowValidation) bool {
-	if !WorkflowUsesGo(v) {
-		return false
+// CorrelatedSourcePathForTest returns the expected production source file path for a test file.
+func CorrelatedSourcePathForTest(testPath string, v WorkflowValidation) string {
+	testPath = filepath.ToSlash(strings.TrimSpace(testPath))
+	if testPath == "" || !IsTestImplementPath(testPath) {
+		return ""
 	}
+	allRequired := v.RequiredFiles
+	if v.HasPhasedDelivery() {
+		allRequired = v.UnionRequiredFiles()
+	}
+	for _, source := range allRequired {
+		source = filepath.ToSlash(filepath.Clean(source))
+		if IsTestImplementPath(source) {
+			continue
+		}
+		for _, cand := range correlatedTestCandidates(source, v) {
+			if cand != "" && PathMatchesImplementWrite(cand, testPath, allRequired, v) {
+				return source
+			}
+		}
+	}
+	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
+	rel := testPath
+	if layout != "" && strings.HasPrefix(rel, layout+"/") {
+		rel = strings.TrimPrefix(rel, layout+"/")
+	}
+	if strings.HasSuffix(rel, "_test.go") {
+		srcRel := strings.TrimSuffix(rel, "_test.go") + ".go"
+		if layout != "" {
+			return layout + "/" + srcRel
+		}
+		return srcRel
+	}
+	if strings.HasSuffix(rel, ".py") {
+		dir := filepath.Dir(rel)
+		base := filepath.Base(rel)
+		var srcBase string
+		if strings.HasPrefix(base, "test_") {
+			srcBase = strings.TrimPrefix(base, "test_")
+		} else if strings.HasSuffix(base, "_test.py") {
+			srcBase = strings.TrimSuffix(base, "_test.py") + ".py"
+		}
+		if srcBase != "" {
+			var srcRel string
+			if dir == "." {
+				srcRel = srcBase
+			} else {
+				srcRel = filepath.ToSlash(filepath.Join(dir, srcBase))
+			}
+			if layout != "" {
+				return layout + "/" + srcRel
+			}
+			return srcRel
+		}
+	}
+	return ""
+}
+
+// AllowedCorrelatedPackageImplementWrite allows editing the paired production or test file
+// in the same package/module while a test or production implement bead is active (e.g. fix handlers.go
+// while working the handlers_test.go bead, or fix main.py while working main_test.py).
+func AllowedCorrelatedPackageImplementWrite(activePath, writtenPath string, v WorkflowValidation) bool {
 	activePath = filepath.ToSlash(strings.TrimSpace(activePath))
 	writtenPath = filepath.ToSlash(strings.TrimSpace(writtenPath))
 	if activePath == "" || writtenPath == "" || activePath == writtenPath {
@@ -227,26 +282,41 @@ func AllowedCorrelatedPackageImplementWrite(activePath, writtenPath string, v Wo
 		return true
 	}
 
-	if !sameGoImplementPackage(activePath, writtenPath, v.LayoutRoot) {
-		return false
-	}
 	allRequired := v.RequiredFiles
 	if v.HasPhasedDelivery() {
 		allRequired = v.UnionRequiredFiles()
 	}
+
+	// Active bead is a test file, writing to its correlated production source file
 	if IsTestImplementPath(activePath) && !IsTestImplementPath(writtenPath) {
+		if src := CorrelatedSourcePathForTest(activePath, v); src != "" &&
+			PathMatchesImplementWrite(writtenPath, src, allRequired, v) {
+			return true
+		}
 		if src := SourcePathForCorrelatedTest(activePath, v.LayoutRoot); src != "" &&
 			PathMatchesImplementWrite(writtenPath, src, allRequired, v) {
 			return true
 		}
-		return productionGoPathInRequiredFiles(writtenPath, v)
+		if WorkflowUsesGo(v) && sameGoImplementPackage(activePath, writtenPath, v.LayoutRoot) {
+			return productionGoPathInRequiredFiles(writtenPath, v)
+		}
+		return false
 	}
+
+	// Active bead is a production file, writing to its correlated test file
 	if !IsTestImplementPath(activePath) && IsTestImplementPath(writtenPath) {
 		if test := CorrelatedTestPathForSource(activePath, v); test != "" &&
 			PathMatchesImplementWrite(writtenPath, test, allRequired, v) {
 			return true
 		}
+		for _, cand := range correlatedTestCandidates(activePath, v) {
+			if cand != "" && PathMatchesImplementWrite(writtenPath, cand, allRequired, v) {
+				return true
+			}
+		}
+		return false
 	}
+
 	return false
 }
 

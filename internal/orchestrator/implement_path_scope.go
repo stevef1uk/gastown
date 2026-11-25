@@ -267,7 +267,10 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 		}
 		return nil
 	}
-	if SourcePathForOwnedTest(written, v) == allowedPath {
+	if SourcePathForOwnedTest(written, v) == allowedPath || SourcePathForOwnedTest(allowedPath, v) == written {
+		return nil
+	}
+	if CorrelatedSourcePathForTest(allowedPath, v) == written || CorrelatedSourcePathForTest(written, v) == allowedPath {
 		return nil
 	}
 	if AllowedCorrelatedPackageImplementWrite(allowedPath, written, v) {
@@ -345,7 +348,7 @@ func NewImplementWriteScopeError(townRoot, rig, allowedID, allowedPath, written 
 	base := fmt.Errorf("write only the active/next implement file (%s for bead %s), not %q",
 		allowedPath, allowedID, written)
 	if AllowedCorrelatedPackageImplementWrite(allowedPath, written, v) {
-		return fmt.Errorf("%w — use **EDIT:**/**WRITE:** on %q to align the same Go package, then **Verify** (go test on this package)",
+		return fmt.Errorf("%w — use **EDIT:**/**WRITE:** on %q to align the correlated source/test file, then **Verify**",
 			base, written)
 	}
 	if targetID, targetPath, ok := OpenImplementBeadForPath(townRoot, rig, written, v); ok && targetID != "" && targetID != allowedID {
