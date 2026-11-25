@@ -306,7 +306,7 @@ func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 	testScope := layout + "/tests"
 
 	isPytest := strings.Contains(lower, "pytest")
-	hasCD := strings.Contains(lower, "cd "+strings.ToLower(layout))
+	hasCD := !strings.Contains(cmd, "(cd ") && strings.Contains(lower, "cd "+strings.ToLower(layout))
 
 	if isPytest {
 		// Strip cd layout from command — pytest needs to run from mayor/rig
@@ -323,6 +323,11 @@ func pythonVerifyWithLayout(cmd string, v WorkflowValidation) string {
 				}
 				return strings.TrimSpace(cmd) + " " + scope
 			}
+		}
+		// If the command already references layout-qualified files after pytest,
+		// don't qualify or append duplicate testScope.
+		if strings.Contains(cmd, layout+"/") {
+			return cmd
 		}
 		// Run pytest from mayor/rig (venv lives there); scope explicit selectors
 		// beneath the layout, or default to layout/tests when none were given.
@@ -360,6 +365,9 @@ func qualifyPythonPytestSelectors(cmd, root string) (string, bool) {
 		return cmd, false
 	}
 
+	layout := strings.Trim(strings.Split(root, "/")[0], "/")
+	layoutPrefix := layout + "/"
+
 	changed := false
 	skipNext := false
 	for i := pytestIdx + 1; i < len(parts); i++ {
@@ -373,7 +381,8 @@ func qualifyPythonPytestSelectors(cmd, root string) (string, bool) {
 			continue
 		}
 		if strings.HasPrefix(part, "-") || strings.Contains(part, "=") ||
-			strings.HasPrefix(part, "/") || strings.HasPrefix(part, root) {
+			strings.HasPrefix(part, "/") || strings.HasPrefix(part, root) ||
+			(layout != "" && strings.HasPrefix(part, layoutPrefix)) {
 			continue
 		}
 		parts[i] = root + part
@@ -398,6 +407,11 @@ func pythonPytestOptionTakesValue(option string) bool {
 }
 
 func extractLayoutScope(cmd, layout string) string {
+	// If cd is inside a subshell like (cd finally/frontend && npm run build),
+	// it is self-contained and must not scope the outer command.
+	if strings.Contains(cmd, "(cd ") {
+		return ""
+	}
 	layoutLower := strings.ToLower(strings.TrimSpace(layout))
 	lower := strings.ToLower(cmd)
 	for _, pat := range []string{"cd " + layoutLower + "/", "cd ./" + layoutLower + "/"} {
@@ -423,6 +437,10 @@ func extractLayoutScope(cmd, layout string) string {
 }
 
 func stripCDLayout(cmd, layout string) string {
+	// Never strip cd from inside a subshell like (cd finally/frontend && npm run build)
+	if strings.Contains(cmd, "(cd ") {
+		return cmd
+	}
 	layoutLower := strings.ToLower(strings.TrimSpace(layout))
 	for _, pat := range []string{
 		"cd " + layoutLower + " && ",

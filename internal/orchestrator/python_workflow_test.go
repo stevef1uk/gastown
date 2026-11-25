@@ -59,6 +59,20 @@ func TestPythonVerifyCommand_layoutCDDoesNotRewriteOptionValue(t *testing.T) {
 	}
 }
 
+func TestPythonVerifyCommand_subshellFrontendAndPytest(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:      "finally",
+		TestRunner:      "pytest",
+		QAVerifyCommand: "(cd finally/frontend && npm run build) && pytest finally/backend/app/main_test.py",
+	}
+	got := PythonVerifyCommand(v)
+	want := ". .venv/bin/activate && (cd finally/frontend && npm run build) && python3 -m pytest finally/backend/app/main_test.py"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
 func TestPythonImplementationVerifyCommandForBead_store(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{
