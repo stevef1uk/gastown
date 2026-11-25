@@ -74,8 +74,8 @@ func TestDefaultFreerideAgents_QAUsesDeepSeek(t *testing.T) {
 	if rc == nil {
 		t.Fatal("gt-agent-qa profile missing")
 	}
-	if rc.Env["LLM_MODEL"] != "deepseek/deepseek-v4-flash" {
-		t.Fatalf("LLM_MODEL = %q, want deepseek/deepseek-v4-flash", rc.Env["LLM_MODEL"])
+	if rc.Env["LLM_MODEL"] != "~deepseek/deepseek-v4-flash-latest" {
+		t.Fatalf("LLM_MODEL = %q, want ~deepseek/deepseek-v4-flash-latest", rc.Env["LLM_MODEL"])
 	}
 	if rc.Env["LLM_TIMEOUT"] != "1200s" {
 		t.Fatalf("LLM_TIMEOUT = %q, want 1200s", rc.Env["LLM_TIMEOUT"])

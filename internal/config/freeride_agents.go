@@ -91,7 +91,7 @@ func DefaultFreerideModelsConfig() *FreerideModelsConfig {
 			"gt-agent-nvidia":     {Model: "openrouter/free"},
 			"gt-agent-gemini":     {Model: "google/gemini-3.6-flash", ExtraEnv: map[string]string{"LLM_TIMEOUT": "1200s"}},
 			"gt-agent-deepseek":   {Model: "openrouter/free", ExtraEnv: map[string]string{"LLM_TIMEOUT": "1200s"}},
-			"gt-agent-qa":         {Model: "deepseek/deepseek-v4-flash", ExtraEnv: map[string]string{"LLM_TIMEOUT": "1200s"}},
+			"gt-agent-qa":         {Model: "~deepseek/deepseek-v4-flash-latest", ExtraEnv: map[string]string{"LLM_TIMEOUT": "1200s"}},
 			"gt-agent-architect":  {Model: "google/gemini-3.6-flash", ExtraEnv: map[string]string{"LLM_TIMEOUT": "1200s"}},
 			"gt-agent-powerful":   {Model: "ollama/llama3.3"},
 			"gt-agent-fast":       {Model: "ollama/ministral-3:8b"},

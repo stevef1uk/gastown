@@ -1,19 +1,19 @@
 {
   "agentModels": {
-    "gt-agent-local": "deepseek/deepseek-v4-flash",
+    "gt-agent-local": "~deepseek/deepseek-v4-flash-latest",
     "gt-agent-gemini": "google/gemini-2.5-flash-lite",
-    "gt-agent-deepseek": "deepseek/deepseek-v4-flash",
-    "gt-agent-qa": "deepseek/deepseek-v4-flash"
+    "gt-agent-deepseek": "~deepseek/deepseek-v4-flash-latest",
+    "gt-agent-qa": "~deepseek/deepseek-v4-flash-latest"
   },
-  "judgeModel": "deepseek/deepseek-v4-flash",
+  "judgeModel": "~deepseek/deepseek-v4-flash-latest",
   "defaultModel": "anthropic/claude-haiku-5.5",
   "models": {
-    "judge": "deepseek/deepseek-v4-flash",
+    "judge": "~deepseek/deepseek-v4-flash-latest",
     "architect": "anthropic/claude-haiku-5.5",
     "analyst": "anthropic/claude-haiku-5.5",
     "planner": "anthropic/claude-haiku-5.5",
     "polecat": "anthropic/claude-haiku-5.5",
-    "qa": "deepseek/deepseek-v4-flash",
+    "qa": "~deepseek/deepseek-v4-flash-latest",
     "tester": "anthropic/claude-haiku-5.5",
     "mayor": "anthropic/claude-haiku-5.5",
     "default": "anthropic/claude-haiku-5.5"

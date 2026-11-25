@@ -13,7 +13,7 @@
       }
     },
     "gt-agent-qa": {
-      "model": "deepseek/deepseek-v4-flash",
+      "model": "~deepseek/deepseek-v4-flash-latest",
       "extra_env": {
         "LLM_TIMEOUT": "1200s"
       }
