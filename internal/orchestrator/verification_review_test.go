@@ -197,6 +197,36 @@ func TestVerificationReview_OnlyExplicitDefectTargetsAreReopened(t *testing.T) {
 	}
 }
 
+func TestVerificationReview_FiltersOutFuturePhaseBeadInMultiFinding(t *testing.T) {
+	_, _, v, town, rig := verificationReviewFixture(t)
+	beads := []PlanBead{
+		{ID: "b-main", Title: "Implement product/main.py per architecture"},
+		{ID: "b-future", Title: "Implement product/worker.py per architecture"},
+	}
+	setListImplementBeadsByStatusHook(t, town, rig, func(_, _ string, _ WorkflowValidation, wanted string) ([]PlanBead, error) {
+		return beads, nil
+	})
+	report := QAFailureReport{
+		Summary: "Mix of in-scope and future-phase findings",
+		Findings: []QAFinding{
+			{Summary: "real in-scope defect", RepairBeadIDs: []string{"b-main"}, Evidence: "main.py is broken"},
+			{Summary: "future phase finding", RepairBeadIDs: []string{"b-future"}, Evidence: "worker.py is in future phase"},
+		},
+	}
+	data, _ := json.Marshal(report)
+	gotOutcome, gotSummary := normalizeVerificationReviewResult(town, rig, v, "failure", string(data))
+	if gotOutcome != "failure" {
+		t.Fatalf("expected outcome=failure after filtering out future phase finding, got %q (summary: %s)", gotOutcome, gotSummary)
+	}
+	cleanedReport, ok := ParseQAFailureReport(gotSummary)
+	if !ok {
+		t.Fatalf("failed to parse cleaned report: %s", gotSummary)
+	}
+	if len(cleanedReport.Findings) != 1 || cleanedReport.Findings[0].RepairBeadIDs[0] != "b-main" {
+		t.Fatalf("unexpected cleaned findings: %+v", cleanedReport.Findings)
+	}
+}
+
 func TestVerificationReview_MultiFindingReportReopensAllOwners(t *testing.T) {
 	m, id, _, town, rig := verificationReviewFixture(t)
 	status := map[string]string{"b-main": "closed", "b-web": "closed"}

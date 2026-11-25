@@ -159,9 +159,42 @@ func normalizeVerificationReviewResult(townRoot, rig string, v WorkflowValidatio
 			}
 		}
 	}
-	for _, id := range qaFailureRepairBeadIDs(report) {
-		if !known[id] {
-			return invalid(fmt.Sprintf("%q is not a canonical current-or-completed-phase implementation bead", id))
+	if len(report.Findings) > 0 {
+		var inScopeFindings []QAFinding
+		for _, f := range report.Findings {
+			var validIDs []string
+			for _, id := range f.RepairBeadIDs {
+				if known[id] {
+					validIDs = append(validIDs, id)
+				}
+			}
+			if len(validIDs) > 0 {
+				f.RepairBeadIDs = validIDs
+				inScopeFindings = append(inScopeFindings, f)
+			}
+		}
+		if len(inScopeFindings) == 0 {
+			return invalid("all finding repair targets are outside current or completed delivery phases")
+		}
+		report.Findings = inScopeFindings
+		if len(report.RepairBeadIDs) > 0 {
+			var validTopIDs []string
+			for _, id := range report.RepairBeadIDs {
+				if known[id] {
+					validTopIDs = append(validTopIDs, id)
+				}
+			}
+			report.RepairBeadIDs = validTopIDs
+		}
+		cleanBytes, err := json.Marshal(report)
+		if err == nil {
+			summary = string(cleanBytes)
+		}
+	} else {
+		for _, id := range qaFailureRepairBeadIDs(report) {
+			if !known[id] {
+				return invalid(fmt.Sprintf("%q is not a canonical current-or-completed-phase implementation bead", id))
+			}
 		}
 	}
 	return outcome, summary
