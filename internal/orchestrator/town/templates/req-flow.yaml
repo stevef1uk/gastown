@@ -521,8 +521,8 @@ states:
     role: tester
     prompt_file: prompts/rig-flow/test_review.md
     instructions: |
-      1. Read TEST_PLAN.md, SPEC.md, and architecture.md under `{{rig}}/mayor/rig/`; compare each requirement to its planned test file.
-      2. Confirm every active-phase test file exists, has real assertions (not stubs), and the phase verify ({{phase_qa_verify_command}}) is green.
+      1. Read TEST_PLAN.md, SPEC.md, and architecture.md under `{{rig}}/mayor/rig/`; compare each in-scope requirement to its planned test file. Only in-scope phases (`{{test_validation_phase_ids}}`) are evaluated; future phases (`{{out_of_scope_phase_ids}}`) are deferred.
+      2. Confirm every in-scope test file exists, has real assertions (not stubs), and the phase verify ({{phase_qa_verify_command}}) is green. Out-of-scope/future phases ({{out_of_scope_phase_ids}}) are deferred — never fail review or demand files for future phases.
       3. Report success only when tests cover every requirement; failure names failing beads (polecat) when a test is missing/weak or verify fails; plan_gap when the plan is incomplete (tester rewrites TEST_PLAN.md); contract_mismatch when green tests assert behavior that contradicts a specific SPEC clause and the fix belongs in production code; architecture_failure when SPEC/architecture themselves are the blocker (architect).
       4. For contract_mismatch include in the JSON summary: `Implementation repair: <test path>`, `SPEC: <file:section> "<exact clause>"`, `Assertion: <test path>:<line> "<exact assertion>"`, `Production fix: <source path>:<line> <change>`, and the owning bead ID. Green tests alone are not evidence of conformance.
     hooks:

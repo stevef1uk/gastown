@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -43,6 +44,16 @@ func ValidateContractMismatchSummary(summary string) error {
 	return nil
 }
 
+// sortedScopeKeys returns sorted keys for consistent error messages.
+func sortedScopeKeys(scope map[string]bool) []string {
+	keys := make([]string, 0, len(scope))
+	for k := range scope {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
 // ValidateTestReviewRepairSummary lets the agent correct an ambiguous report
 // before sending it to the authoritative orchestrator.
 func ValidateTestReviewRepairSummary(rigDir string, v WorkflowValidation, summary string) error {
@@ -53,19 +64,59 @@ func ValidateTestReviewRepairSummary(rigDir string, v WorkflowValidation, summar
 	scope := testPlanPhaseScope(v)
 	for _, block := range ParseTestPlanBlocks(string(data)) {
 		phase := strings.ToLower(strings.TrimSpace(block.Phase))
-		if scope != nil && phase != "" && !scope[phase] {
-			continue
-		}
 		test := cleanPlannedTestFilePath(block.TestFile)
 		if test == "" {
 			continue
 		}
 		testPath := NormalizePlannerBeadPath(test, v.LayoutRoot, "")
+		if scope != nil && phase != "" && !scope[phase] {
+			// Future-phase test row: must NOT be reported as failing or marked for repair.
+			if strings.Contains(summary, test) || strings.Contains(summary, testPath) {
+				lowerSummary := strings.ToLower(summary)
+				isDeferredMention := strings.Contains(lowerSummary, "deferred") || strings.Contains(lowerSummary, "out of scope") || strings.Contains(lowerSummary, "future")
+				testRepair := strings.Contains(summary, "Test repair: "+test) || strings.Contains(summary, "Test repair: "+testPath)
+				implementationRepair := strings.Contains(summary, "Implementation repair: "+test) || strings.Contains(summary, "Implementation repair: "+testPath)
+				if testRepair || implementationRepair || !isDeferredMention {
+					return fmt.Errorf("test %s belongs to future phase %q (active phase is %q, in scope: %s). Future-phase tests are deferred until that phase begins and must not be marked for repair or cause review failure. If in-scope tests pass and phase verify is green, return outcome \"success\".", testPath, block.Phase, v.ActivePhaseID(), strings.Join(sortedScopeKeys(scope), ", "))
+				}
+			}
+			continue
+		}
 		if _, err := classifyTestReviewFinding(summary, test, testPath); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func isBeadExplicitlyCitedForRepair(summary, beadID string) bool {
+	if beadID == "" {
+		return false
+	}
+	lower := strings.ToLower(summary)
+	lowerID := strings.ToLower(beadID)
+	if !strings.Contains(lower, lowerID) {
+		return false
+	}
+	for _, marker := range []string{
+		"reopen " + lowerID,
+		"reopen bead " + lowerID,
+		"repair " + lowerID,
+		"repair bead " + lowerID,
+		"fix " + lowerID,
+		"reopened " + lowerID,
+		"reopened bead " + lowerID,
+		"bead " + lowerID + " lacks",
+		"bead " + lowerID + " missing",
+		"bead " + lowerID + " failed",
+		"bead " + lowerID + " fails",
+		"bead " + lowerID + " broken",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func selectTestReviewRepair(rigDir string, v WorkflowValidation, plan, summary string, beads []PlanBead) (testReviewRepair, error) {
@@ -155,15 +206,15 @@ func selectTestReviewRepair(rigDir string, v WorkflowValidation, plan, summary s
 				continue
 			}
 		}
-		named := strings.Contains(summary, test) || strings.Contains(summary, path) || cited[owners[0].ID] || broken[test]
+		reported := strings.Contains(summary, test) || strings.Contains(summary, path) || strings.Contains(summary, testPath)
+		beadExplicitlyCited := cited[owners[0].ID] && isBeadExplicitlyCitedForRepair(summary, owners[0].ID)
+		named := reported || broken[test] || beadExplicitlyCited
 		anyNamed = anyNamed || named
 		explicit, err := classifyTestReviewFinding(summary, test, testPath)
 		if err != nil {
 			return testReviewRepair{}, err
 		}
-		reported := strings.Contains(summary, test) || strings.Contains(summary, testPath)
-		citedInSummary := cited[owners[0].ID]
-		candidates = append(candidates, candidate{phase: phase, bead: owners[0], test: testPath, named: named, explicit: explicit, reported: reported, citedInSummary: citedInSummary})
+		candidates = append(candidates, candidate{phase: phase, bead: owners[0], test: testPath, named: named, explicit: explicit, reported: reported, citedInSummary: beadExplicitlyCited})
 		if named && phase == v.ActivePhaseID() {
 			activeNamedTests[testOwner{testPath, owners[0].ID}] = true
 		}

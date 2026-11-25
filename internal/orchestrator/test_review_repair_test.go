@@ -426,6 +426,43 @@ func TestTesterRepairDefersCompletedPhaseTestFindings(t *testing.T) {
 	}
 }
 
+func TestValidateTestReviewRepairSummary_futurePhase(t *testing.T) {
+	town, rig, v, _, _ := testReviewRepairFixture(t, "demo/store/store.go", "demo/store/store_test.go")
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	// Active phase is "api", completed is "storage", future is "browser".
+	// Reject repair demand on future-phase test.
+	futureRepairSummary := "Test repair: demo/tests/e2e.spec.js lacks assertions"
+	if err := ValidateTestReviewRepairSummary(rigDir, v, futureRepairSummary); err == nil || !strings.Contains(err.Error(), "future phase") {
+		t.Fatalf("expected error rejecting future-phase test repair, got %v", err)
+	}
+
+	// Allow summary that notes future-phase test is deferred or out of scope.
+	deferredSummary := "Test repair: demo/server/main_test.go lacks assertions. Future phase browser test demo/tests/e2e.spec.js is deferred and out of scope."
+	if err := ValidateTestReviewRepairSummary(rigDir, v, deferredSummary); err != nil {
+		t.Fatalf("expected nil error when future test is deferred, got %v", err)
+	}
+}
+
+func TestTesterRepairDoesNotReopenPassingInventoryBead(t *testing.T) {
+	town, rig, v, plan, beads := testReviewRepairFixture(t, "demo/store/store.go", "demo/store/store_test.go")
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	// The summary names store_test.go for repair, and mentions sample-api only as passing inventory.
+	// sample-api must NOT be selected for repair.
+	summary := "Test repair: demo/store/store_test.go lacks assertions. phase-api (sample-api) test files exist and phase verify is green."
+	repair, err := selectTestReviewRepair(rigDir, v, plan, summary, beads)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := repair.tests["sample-api"]; ok {
+		t.Fatalf("expected sample-api not selected for repair when mentioned only as passing inventory, got tests: %+v", repair.tests)
+	}
+	for _, b := range repair.beads {
+		if b.ID == "sample-api" {
+			t.Fatalf("expected sample-api not in repair beads, got %+v", repair.beads)
+		}
+	}
+}
+
 func TestTesterRepairBaselineSurvivesRestartAndTimeout(t *testing.T) {
 	town := t.TempDir()
 	m := newTestReviewLoopManager(t, town)

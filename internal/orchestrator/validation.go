@@ -1570,13 +1570,21 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		allPhaseIDs = append(allPhaseIDs, strings.TrimSpace(p.ID))
 	}
 	allPhaseIDsStr := strings.Join(allPhaseIDs, ", ")
-	var testPhaseIDs, setupPhaseIDs []string
+	var testPhaseIDs, setupPhaseIDs, outOfScopePhaseIDs []string
 	for _, phase := range v.DeliveryPhases {
 		if PhaseShipsAutomatedTests(phase) {
 			testPhaseIDs = append(testPhaseIDs, phase.ID)
 		} else {
 			setupPhaseIDs = append(setupPhaseIDs, phase.ID)
 		}
+		id := strings.TrimSpace(phase.ID)
+		if !seenPhase[id] {
+			outOfScopePhaseIDs = append(outOfScopePhaseIDs, id)
+		}
+	}
+	outOfScopePhaseIDsStr := strings.Join(outOfScopePhaseIDs, ", ")
+	if len(outOfScopePhaseIDs) == 0 {
+		outOfScopePhaseIDsStr = "none (all phases in scope)"
 	}
 
 	return map[string]string{
@@ -1595,6 +1603,7 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 		"test_plan_phase_ids":             strings.Join(testPhaseIDs, ", "),
 		"setup_only_phase_ids":            strings.Join(setupPhaseIDs, ", "),
 		"test_validation_phase_ids":       phaseIDsStr,
+		"out_of_scope_phase_ids":          outOfScopePhaseIDsStr,
 		"phase_scope_note":                v.PhaseScopeNote(),
 		"integration_contract_scope_note": v.IntegrationContractScopeNote(),
 		"requirements_file":               req,

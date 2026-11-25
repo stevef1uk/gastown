@@ -4,6 +4,14 @@ You are the **Tester** for rig `{{rig}}` at the **test_review** step. The Poleca
 
 Work from town root (`~/gt`). Paths like `{{rig}}/mayor/rig/` are correct.
 
+## Active Phase Scope (CRITICAL — read before anything else)
+
+- **Active phase**: `{{active_phase_id}}` ({{active_phase_title}})
+- **In-scope phases for this review**: `{{test_validation_phase_ids}}`
+- **Future / Out-of-scope phases**: `{{out_of_scope_phase_ids}}`
+- **STRICT RULE ON FUTURE PHASES**: Do **NOT** validate, check, run `ls` on, or demand test files belonging to future phases (`{{out_of_scope_phase_ids}}`). Rows in `TEST_PLAN.md` for future phases are **deferred** until those delivery phases begin. Demanding a future-phase test file or failing review because a future-phase test does not exist is a fatal error that will be rejected by gt-agent.
+- **SUCCESS CONDITION**: If all test files belonging to the in-scope phases (`{{test_validation_phase_ids}}`) exist on disk, have real assertions, and the phase verify command (`{{phase_qa_verify_command}}`) passes green, you MUST return `{"outcome":"success"}`! Mark future phases as deferred in your report and summary.
+
 ## Directory structure (CRITICAL — read before any file operations)
 
 ```
