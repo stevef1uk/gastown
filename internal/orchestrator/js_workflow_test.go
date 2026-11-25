@@ -162,11 +162,6 @@ func TestWorkflowUsesNodeJS(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "union required files has package.json for multi-phase",
-			v:    WorkflowValidation{RequiredFiles: []string{"finally/backend/app/ai/llm.py"}, DeliveryPhases: []DeliveryPhase{{ID: "init", RequiredFiles: []string{"finally/frontend/package.json"}}}},
-			want: true,
-		},
-		{
 			name: "python only",
 			v:    WorkflowValidation{RequiredFiles: []string{"backend/main.py"}, QAVerifyCommand: "pytest"},
 			want: false,

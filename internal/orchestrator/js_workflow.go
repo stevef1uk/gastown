@@ -74,21 +74,10 @@ func WorkflowUsesNodeJS(v WorkflowValidation) bool {
 	hasNodeCommand := false
 	hasFrontendTypeScript := false
 
-	// Check required files across active phase and all delivery phases
-	files := v.UnionRequiredFiles()
-	if len(files) == 0 {
-		files = v.RequiredFiles
-	} else if len(v.RequiredFiles) > 0 {
-		for _, f := range v.RequiredFiles {
-			if !containsString(files, f) {
-				files = append(files, f)
-			}
-		}
-	}
-
 	layout := strings.Trim(filepath.ToSlash(strings.TrimSpace(v.LayoutRoot)), "/")
 
-	for _, f := range files {
+	// Check required files for project infrastructure
+	for _, f := range v.RequiredFiles {
 		f = filepath.ToSlash(strings.ToLower(strings.TrimSpace(f)))
 		rel := f
 		if layout != "" && strings.HasPrefix(rel, layout+"/") {
@@ -108,38 +97,15 @@ func WorkflowUsesNodeJS(v WorkflowValidation) bool {
 		}
 	}
 
-	for _, p := range v.DeliveryPhases {
-		for _, f := range p.RequiredFiles {
-			f = filepath.ToSlash(strings.ToLower(strings.TrimSpace(f)))
-			if strings.HasSuffix(f, "package.json") || f == "package.json" {
-				hasPackageJSON = true
-			}
-			if strings.HasSuffix(f, "tsconfig.json") {
-				hasTSConfig = true
-			}
-		}
-	}
-
 	// Check verify commands for explicit npm/pnpm/yarn commands (not just npx playwright)
-	checkCmd := func(q string) bool {
-		q = strings.ToLower(strings.TrimSpace(q))
-		return strings.Contains(q, "npm install") || strings.Contains(q, "npm test") ||
-			strings.Contains(q, "npm run") || strings.Contains(q, "npm ci") ||
-			strings.Contains(q, "yarn install") || strings.Contains(q, "yarn test") ||
-			strings.Contains(q, "yarn run") || strings.Contains(q, "pnpm install") ||
-			strings.Contains(q, "pnpm test") || strings.Contains(q, "pnpm run") ||
-			strings.Contains(q, "next build") || strings.Contains(q, "vite build")
-	}
-
-	if checkCmd(v.QAVerifyCommand) {
+	q := strings.ToLower(strings.TrimSpace(v.QAVerifyCommand))
+	if strings.Contains(q, "npm install") || strings.Contains(q, "npm test") ||
+		strings.Contains(q, "npm run") || strings.Contains(q, "npm ci") ||
+		strings.Contains(q, "yarn install") || strings.Contains(q, "yarn test") ||
+		strings.Contains(q, "yarn run") || strings.Contains(q, "pnpm install") ||
+		strings.Contains(q, "pnpm test") || strings.Contains(q, "pnpm run") ||
+		strings.Contains(q, "next build") || strings.Contains(q, "vite build") {
 		hasNodeCommand = true
-	} else {
-		for _, p := range v.DeliveryPhases {
-			if checkCmd(p.QAVerifyCommand) {
-				hasNodeCommand = true
-				break
-			}
-		}
 	}
 
 	// A Node.js workflow requires explicit project infrastructure
