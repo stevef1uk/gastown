@@ -1005,6 +1005,18 @@ func (m *Manager) CompleteTask(workflowID string, outcome string, agentID, summa
 	if phaseAdvance != nil {
 		inst.PendingRework = phaseAdvance
 	}
+	if fromState == "spec_analysis" && next == "spec_review" && outcome == "success" {
+		inst.PendingRework = &WorkflowRework{
+			FromState: fromState,
+			Outcome:   outcome,
+			Summary:   truncateWorkflowText(summary, maxWorkflowReworkSummary),
+			Feedback:  truncateWorkflowText(summary, maxWorkflowReworkFeedback),
+			AgentID:   agentID,
+		}
+	}
+	if fromState == "spec_analysis" || fromState == "spec_review" {
+		m.recordSpecAuditLog(rig, fromState, outcome, agentID, summary)
+	}
 	if (fromState == "test_review" && (outcome == "success" || outcome == "plan_gap" || IsArchitectureReworkOutcome(outcome))) || (fromState == "implementation" && (outcome == "plan_gap" || IsArchitectureReworkOutcome(outcome))) {
 		inst.ActiveTestRepair = nil
 	}
@@ -1256,4 +1268,25 @@ func validateTemplateSchema(tpl *WorkflowTemplate, filename string) string {
 	}
 	return fmt.Sprintf("template %q (%s): states missing role: %s (use role:, not agent_role:)",
 		tpl.ID, filename, strings.Join(missing, ", "))
+}
+
+func (m *Manager) recordSpecAuditLog(rig, state, outcome, agentID, summary string) {
+	if rig == "" || strings.TrimSpace(summary) == "" {
+		return
+	}
+	rigDir := filepath.Join(m.townRoot, rig, "mayor", "rig")
+	if _, err := os.Stat(rigDir); err != nil {
+		return
+	}
+	auditPath := filepath.Join(rigDir, "SPEC_AUDIT.md")
+	f, err := os.OpenFile(auditPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	timestamp := time.Now().UTC().Format("2006-01-02 15:04:05 UTC")
+	entry := fmt.Sprintf("\n## [%s] %s (%s)\n- **Outcome:** %s\n- **Agent:** %s\n- **Summary:** %s\n",
+		timestamp, state, outcome, outcome, agentID, strings.TrimSpace(summary))
+	_, _ = f.WriteString(entry)
 }

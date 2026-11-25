@@ -69,6 +69,16 @@ NEXT_PUBLIC_API_URL=http://localhost:3000
 		t.Fatalf("after spec_analysis next = %q, want spec_review", next)
 	}
 
+	// Verify analyst findings passed to spec_review
+	if pending := mgr.instances[wfID].PendingRework; pending == nil || !strings.Contains(pending.Summary, "Found port mismatch") {
+		t.Fatalf("expected pending rework with analyst findings, got: %+v", pending)
+	}
+	// Verify audit log was recorded on disk
+	auditData, err := os.ReadFile(filepath.Join(rigDir, "SPEC_AUDIT.md"))
+	if err != nil || !strings.Contains(string(auditData), "Found port mismatch") {
+		t.Fatalf("expected SPEC_AUDIT.md with findings, got err=%v content=%s", err, string(auditData))
+	}
+
 	// Step 3: QA rejects first attempt (testing rework cycle) -> transitions back to spec_analysis
 	qaRejection := "Need exact line numbers and diff patch for the port change."
 	next, err = mgr.CompleteTask(wfID, "failure", rigName+"/qa", qaRejection, "", nil)

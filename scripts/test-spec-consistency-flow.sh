@@ -14,7 +14,25 @@ set -euo pipefail
 # ==============================================================================
 
 GT_ROOT="${GT_ROOT:-/home/stevef/gt}"
-RIG_NAME="${1:-spec_consistency_test}"
+RIG_NAME="spec_consistency_test"
+START_WORKFLOW="false"
+
+for arg in "$@"; do
+    case "$arg" in
+        --start)
+            START_WORKFLOW="true"
+            ;;
+        --help|-h)
+            echo "Usage: $0 [rig_name] [--start]"
+            exit 0
+            ;;
+        *)
+            if [[ "$arg" != --* ]]; then
+                RIG_NAME="$arg"
+            fi
+            ;;
+    esac
+done
 
 if [[ "${RIG_NAME}" == "testgt4" ]]; then
     echo "ERROR: Refusing to use 'testgt4' as test rig. An active workflow is running there." >&2
@@ -85,13 +103,16 @@ echo "Logging and audit locations:"
 echo "  1. Live Orchestrator FSM transitions:"
 echo "     tail -f ${GT_ROOT}/logs/orchestrator.log | grep -E '${RIG_NAME}|spec_analysis|spec_review'"
 echo ""
-echo "  2. Analyst inspection and findings log:"
-echo "     tail -f ${GT_ROOT}/logs/sessions/te-${RIG_NAME}-analyst.log"
+echo "  2. Dedicated on-disk SPEC Consistency Audit Log (created during audit):"
+echo "     cat ${RIG_DIR}/SPEC_AUDIT.md"
 echo ""
-echo "  3. QA review and patch application log:"
-echo "     tail -f ${GT_ROOT}/logs/sessions/te-${RIG_NAME}-qa.log"
+echo "  3. Analyst inspection and findings log:"
+echo "     tail -f ${GT_ROOT}/logs/sessions/*-${RIG_NAME}-analyst.log"
 echo ""
-echo "  4. Verified SPEC.md patch diff (changes applied by QA):"
+echo "  4. QA review and patch application log:"
+echo "     tail -f ${GT_ROOT}/logs/sessions/*-${RIG_NAME}-qa.log"
+echo ""
+echo "  5. Verified SPEC.md patch diff (changes applied by QA):"
 echo "     git -C ${RIG_DIR} diff SPEC.md"
 echo ""
 echo "To start the workflow:"
@@ -99,3 +120,11 @@ echo "  GT_ROOT=${GT_ROOT} gt mayor workflow start rig-flow --rig ${RIG_NAME}"
 echo ""
 echo "To inspect progress:"
 echo "  GT_ROOT=${GT_ROOT} gt mayor workflow status"
+
+if [[ "${START_WORKFLOW}" == "true" ]]; then
+    echo ""
+    echo "=== [Auto-Start] Launching rig-flow on ${RIG_NAME} ==="
+    GT_ROOT="${GT_ROOT}" gt mayor workflow start rig-flow --rig "${RIG_NAME}"
+    echo "Workflow launched! Tracking status..."
+    GT_ROOT="${GT_ROOT}" gt mayor workflow status
+fi

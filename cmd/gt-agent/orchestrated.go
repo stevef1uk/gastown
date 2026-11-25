@@ -902,6 +902,20 @@ func formatWorkflowReworkBlock(task *orchestrator.Task, townRoot, rig string) st
 		b.WriteString("Read the repaired files and check the specific scenarios above; a changed file or green test run alone does not establish coverage. In test-report.md explain how each finding is covered and include one line for each repaired file in this exact format: - Evidence: {\"file\":\"relative/path\",\"line\":1,\"excerpt\":\"exact source line\"}. The excerpt must be a real assertion relevant to the finding. If coverage is still missing, report failure; if the finding or test plan is wrong, report plan_gap with evidence.\n")
 		return b.String()
 	}
+	if r.FromState == "spec_analysis" && task.State == "spec_review" {
+		b.WriteString("## Analyst spec analysis findings\n")
+		if r.AgentID != "" {
+			b.WriteString(fmt.Sprintf("- Reported by: %s (workflow %s)\n", r.AgentID, task.WorkflowID))
+		}
+		if r.Summary != "" {
+			b.WriteString(fmt.Sprintf("- Summary: %s\n", r.Summary))
+		}
+		if r.Feedback != "" && r.Feedback != r.Summary {
+			b.WriteString(fmt.Sprintf("- Details: %s\n", r.Feedback))
+		}
+		b.WriteString("\nVet the Analyst's findings above against SPEC.md. If verified, apply necessary corrections to SPEC.md and report success. If invalid, report failure to return to spec_analysis.\n")
+		return b.String()
+	}
 	b.WriteString("## Prior step failed — fix before completing this step\n")
 	b.WriteString(fmt.Sprintf("- Failed step: %s (workflow %s)\n", r.FromState, task.WorkflowID))
 	b.WriteString(fmt.Sprintf("- Your step now: %s\n", task.State))
@@ -1994,22 +2008,22 @@ func validateSpecAnalysisCommand(cmd, rig string) error {
 		return fmt.Errorf("analyst in spec analysis is read-only and may not write files")
 	}
 
-	if strings.Contains(lower, "cat ") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+	if strings.Contains(lower, "cat ") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md") || strings.Contains(lower, "spec_audit.md")) {
 		return nil
 	}
-	if (strings.Contains(lower, "head ") || strings.Contains(lower, "tail ")) && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+	if (strings.Contains(lower, "head ") || strings.Contains(lower, "tail ")) && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md") || strings.Contains(lower, "spec_audit.md")) {
 		return nil
 	}
-	if strings.Contains(lower, "grep") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+	if strings.Contains(lower, "grep") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md") || strings.Contains(lower, "spec_audit.md")) {
 		return nil
 	}
-	if strings.Contains(lower, "wc") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+	if strings.Contains(lower, "wc") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md") || strings.Contains(lower, "spec_audit.md")) {
 		return nil
 	}
-	if strings.Contains(lower, "diff") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+	if strings.Contains(lower, "diff") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md") || strings.Contains(lower, "spec_audit.md")) {
 		return nil
 	}
-	if strings.Contains(lower, "test -f") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md")) {
+	if strings.Contains(lower, "test -f") && (strings.Contains(lower, "spec.md") || strings.Contains(lower, "requirements.md") || strings.Contains(lower, "spec_audit.md")) {
 		return nil
 	}
 
@@ -2021,18 +2035,11 @@ func validateSpecAnalysisCommand(cmd, rig string) error {
 func validateSpecReviewCommand(cmd, rig string) error {
 	lower := strings.ToLower(cmd)
 
-	// Reading REQUIREMENTS.md.
-	if strings.Contains(lower, "cat ") && strings.Contains(lower, "requirements.md") {
+	// Reading REQUIREMENTS.md, SPEC.md, or SPEC_AUDIT.md.
+	if strings.Contains(lower, "cat ") && (strings.Contains(lower, "requirements.md") || strings.Contains(lower, "spec.md") || strings.Contains(lower, "spec_audit.md")) {
 		return nil
 	}
-	if (strings.Contains(lower, "head ") || strings.Contains(lower, "tail ")) && strings.Contains(lower, "requirements.md") {
-		return nil
-	}
-	// Reading or writing SPEC.md.
-	if strings.Contains(lower, "cat ") && strings.Contains(lower, "spec.md") {
-		return nil
-	}
-	if (strings.Contains(lower, "head ") || strings.Contains(lower, "tail ")) && strings.Contains(lower, "spec.md") {
+	if (strings.Contains(lower, "head ") || strings.Contains(lower, "tail ")) && (strings.Contains(lower, "requirements.md") || strings.Contains(lower, "spec.md") || strings.Contains(lower, "spec_audit.md")) {
 		return nil
 	}
 	if strings.Contains(lower, "cat >") && strings.Contains(lower, "spec.md") {

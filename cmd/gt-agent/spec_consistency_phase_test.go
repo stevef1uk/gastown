@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/steveyegge/gastown/internal/orchestrator"
 )
 
 func TestValidateSpecAnalysisCommand(t *testing.T) {
@@ -82,5 +84,27 @@ func TestValidateSpecReviewCommand(t *testing.T) {
 		} else if !strings.Contains(err.Error(), "spec review may only") {
 			t.Errorf("validateSpecReviewCommand(%q) unexpected error message: %v", cmd, err)
 		}
+	}
+}
+
+func TestFormatWorkflowReworkBlock_SpecAnalysisHandoff(t *testing.T) {
+	task := &orchestrator.Task{
+		WorkflowID: "wf-test",
+		State:      "spec_review",
+		PendingRework: &orchestrator.WorkflowRework{
+			FromState: "spec_analysis",
+			AgentID:   "testgt/analyst",
+			Summary:   "Found port conflict: 8080 vs 3000",
+		},
+	}
+	block := formatWorkflowReworkBlock(task, "/tmp/town", "testgt")
+	if !strings.Contains(block, "Analyst spec analysis findings") {
+		t.Fatalf("expected header 'Analyst spec analysis findings', got:\n%s", block)
+	}
+	if !strings.Contains(block, "Found port conflict: 8080 vs 3000") {
+		t.Fatalf("expected summary in block, got:\n%s", block)
+	}
+	if !strings.Contains(block, "Vet the Analyst's findings") {
+		t.Fatalf("expected vetting instruction in block, got:\n%s", block)
 	}
 }

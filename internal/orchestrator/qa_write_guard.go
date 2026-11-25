@@ -62,7 +62,7 @@ func statementWritesPath(stmt, relPath string) bool {
 	lower := strings.ToLower(stmt)
 	writeMarkers := []string{
 		"sed -i", "sed -i'", `sed -i"`, "sed -i ",
-		"cat >", "cat>>", " tee ", "patch ", "patch -p",
+		"cat >", "cat>>", "patch ", "patch -p",
 		"mv ", "cp ", "touch ", "truncate ",
 		"sponge ", "perl -pi", "perl -pe",
 	}
@@ -70,6 +70,9 @@ func statementWritesPath(stmt, relPath string) bool {
 		if strings.Contains(lower, m) {
 			return true
 		}
+	}
+	if strings.HasPrefix(lower, "tee ") || strings.Contains(lower, " tee ") || strings.Contains(lower, "|tee") {
+		return true
 	}
 	// Check for coreutils install command (avoid false positives on npm/pnpm/yarn/pip/brew/apt install)
 	if strings.HasPrefix(lower, "install ") || strings.Contains(lower, "/install ") {
