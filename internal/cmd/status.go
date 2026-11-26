@@ -1306,6 +1306,21 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 			}
 		}
 
+		// Tester
+		if len(testers) > 0 {
+			if statusVerbose {
+				fmt.Fprintf(w, "%s %s\n", roleIcons[constants.RoleTester], style.Bold.Render("Tester"))
+				for _, agent := range testers {
+					renderAgentDetails(w, agent, "   ", r.Hooks, status.Location)
+				}
+				fmt.Fprintln(w)
+			} else {
+				for _, agent := range testers {
+					renderAgentCompact(w, agent, roleIcons[constants.RoleTester]+" ", r.Hooks, status.Location)
+				}
+			}
+		}
+
 		// Mechanic
 		if len(mechanics) > 0 {
 			if statusVerbose {
@@ -1353,21 +1368,6 @@ func outputStatusText(w io.Writer, status TownStatus) error {
 			}
 		}
 
-		// Testers
-		if len(testers) > 0 {
-			if statusVerbose {
-				fmt.Fprintf(w, "%s %s (%d)\n", roleIcons[constants.RoleTester], style.Bold.Render("Testers"), len(testers))
-				for _, agent := range testers {
-					renderAgentDetails(w, agent, "   ", r.Hooks, status.Location)
-				}
-				fmt.Fprintln(w)
-			} else {
-				fmt.Fprintf(w, "%s %s (%d)\n", roleIcons[constants.RoleTester], style.Bold.Render("Testers"), len(testers))
-				for _, agent := range testers {
-					renderAgentCompact(w, agent, "   ", r.Hooks, status.Location)
-				}
-			}
-		}
 
 		// No agents
 		if len(witnesses) == 0 && len(refineries) == 0 && len(architects) == 0 && len(qas) == 0 && len(crews) == 0 && len(polecats) == 0 && len(testers) == 0 {
@@ -2006,6 +2006,18 @@ func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, 
 			session: session.QASessionName(session.PrefixFor(r.Name), r.Name),
 			role:    constants.RoleQA,
 			beadID:  beads.QABeadIDWithPrefix(prefix, r.Name),
+		})
+	}
+
+	// Tester (per-rig)
+	testerDir := filepath.Join(r.Path, constants.DirTester)
+	if _, err := os.Stat(testerDir); err == nil {
+		defs = append(defs, agentDef{
+			name:    constants.RoleTester,
+			address: r.Name + "/tester",
+			session: session.TesterSessionName(session.PrefixFor(r.Name), r.Name),
+			role:    constants.RoleTester,
+			beadID:  beads.TesterBeadIDWithPrefix(prefix, r.Name),
 		})
 	}
 

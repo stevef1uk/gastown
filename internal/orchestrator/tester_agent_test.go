@@ -501,6 +501,33 @@ func TestTestPlanBeadMappingMismatchesSkipsFuturePhases(t *testing.T) {
 	}
 }
 
+func TestTestPlanBeadMappingMismatchesSkipsClosedPlaceholder(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:             "finally",
+		BeadTitleContains:      "Implement ",
+		ActivePhaseIDField:     "ai-trading-assistant",
+		CompletedPhaseIDsField: []string{"project-foundation"},
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "project-foundation", RequiredFiles: []string{"finally/backend/app/main.py", "finally/backend/app/main_test.py"}},
+			{ID: "ai-trading-assistant", RequiredFiles: []string{"finally/backend/app/ai/llm.py", "finally/backend/tests/test_chat.py"}},
+		},
+	}
+	blocks := []TestPlanBlock{
+		// Completed phase has "Bead ID: closed" and names main_test.py.
+		{ReqID: "project-foundation", Phase: "project-foundation", TestFile: "finally/backend/app/main_test.py", BeadID: "closed"},
+		// Active phase has a real bead.
+		{ReqID: "ai-trading-assistant", Phase: "ai-trading-assistant", TestFile: "finally/backend/tests/test_chat.py", BeadID: "te-62z"},
+	}
+	titles := map[string]string{
+		"te-62z": "Implement finally/backend/tests/test_chat.py per architecture",
+	}
+
+	if got := testPlanBeadMappingMismatches(v, blocks, titles); len(got) != 0 {
+		t.Fatalf("completed phase row with Bead ID: closed should not be flagged as mismatch, got %v", got)
+	}
+}
+
 func TestPhaseShipsAutomatedTests(t *testing.T) {
 	cases := []struct {
 		name string

@@ -405,6 +405,16 @@ func QABeadIDRig(rig string) string {
 	return QABeadIDWithPrefix("gt", rig)
 }
 
+// TesterBeadIDWithPrefix returns the Tester agent bead ID for a rig using the specified prefix.
+func TesterBeadIDWithPrefix(prefix, rig string) string {
+	return AgentBeadIDWithPrefix(prefix, rig, constants.RoleTester, "")
+}
+
+// TesterBeadIDRig returns the Tester agent bead ID for a rig using "gt" prefix.
+func TesterBeadIDRig(rig string) string {
+	return TesterBeadIDWithPrefix("gt", rig)
+}
+
 // CrewBeadIDWithPrefix returns a Crew worker agent bead ID using the specified prefix.
 func CrewBeadIDWithPrefix(prefix, rig, name string) string {
 	return AgentBeadIDWithPrefix(prefix, rig, constants.RoleCrew, name)

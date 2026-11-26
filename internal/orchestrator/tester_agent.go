@@ -434,7 +434,7 @@ func testPlanPhaseScope(v WorkflowValidation) map[string]bool {
 
 func isPlaceholderBeadID(s string) bool {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "none", "n/a", "na", "tbd", "todo", "pending", "-", "plan_gap", "plan-gap":
+	case "", "none", "n/a", "na", "tbd", "todo", "pending", "-", "plan_gap", "plan-gap", "closed", "done", "complete", "completed":
 		return true
 	default:
 		return false

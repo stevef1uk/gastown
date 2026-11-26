@@ -117,4 +117,9 @@ func ensureOrchestratedRigAgentsRunning(townRoot, rigName string, r *rig.Rig) {
 	wantPole := orchestrator.OrchestratedForRole(true, constants.RolePolecat)
 	upEnsureFreshPipelineSession(ctx, sp, townRoot, poleID, wantPole)
 	_ = upStartRigPolecat(rigName, r)
+
+	testerID := session.TesterSessionName(prefix, rigName)
+	wantTester := orchestrator.OrchestratedForRole(true, constants.RoleTester)
+	upEnsureFreshPipelineSession(ctx, sp, townRoot, testerID, wantTester)
+	_ = upStartTester(rigName, r)
 }
