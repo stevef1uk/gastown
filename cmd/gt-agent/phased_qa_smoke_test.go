@@ -93,3 +93,14 @@ func TestValidateQACommand_phasedBackendCoreRejectsBareCurl(t *testing.T) {
 		t.Fatalf("want no-runtime-smoke rejection, got: %v", err)
 	}
 }
+
+func TestValidateQACommand_phasedGoBuildArbitraryBinaryPasses(t *testing.T) {
+	t.Parallel()
+	dir, rig, v := linkshelfSmokeTestRig(t)
+
+	cmd := "cd linkshelf && go build -o /tmp/taskboard-gate ./cmd/taskboard && /tmp/taskboard-gate & sleep 1 && curl -s http://127.0.0.1:8080/api/links"
+	err := validateQACommand(cmd, rig, dir, v)
+	if err != nil {
+		t.Fatalf("expected go build with custom binary name to pass, got: %v", err)
+	}
+}
