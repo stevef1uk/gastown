@@ -77,6 +77,38 @@ func TestParseTestPlanDetailed(t *testing.T) {
 	}
 }
 
+func TestParseTestPlanDetailed_MultiRequirement(t *testing.T) {
+	content := `### phase-1-core
+Requirement: Domain validation: project name trimmed
+Level: unit
+Test file: internal/model/model_test.go
+Bead ID: ta-4rb
+Phase: phase-1-core
+
+Requirement: Configuration parsing: env overrides
+Level: unit
+Test file: internal/config/config_test.go
+Bead ID: ta-gd2
+Phase: phase-1-core
+`
+	blocks := ParseTestPlanDetailed(content)
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 blocks from multi-requirement section, got %d", len(blocks))
+	}
+	if blocks[0].BeadID != "ta-4rb" {
+		t.Errorf("expected first bead ta-4rb, got %q", blocks[0].BeadID)
+	}
+	if blocks[1].BeadID != "ta-gd2" {
+		t.Errorf("expected second bead ta-gd2, got %q", blocks[1].BeadID)
+	}
+	if !strings.Contains(blocks[0].Requirement, "Domain validation") {
+		t.Errorf("expected Domain validation in first block, got %q", blocks[0].Requirement)
+	}
+	if !strings.Contains(blocks[1].Requirement, "Configuration parsing") {
+		t.Errorf("expected Configuration parsing in second block, got %q", blocks[1].Requirement)
+	}
+}
+
 func TestParsePlanBeadMap(t *testing.T) {
 	planMD := `
 # Implementation plan

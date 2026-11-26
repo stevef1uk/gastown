@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -46,18 +47,29 @@ type RTMRow struct {
 	AuditMessage string      `json:"audit_message,omitempty"`
 }
 
+// RTMBeadRow represents an implementation bead linked to a requirement or delivery artifact.
+type RTMBeadRow struct {
+	ID          string `json:"id"`
+	Status      string `json:"status"`
+	Requirement string `json:"requirement,omitempty"`
+	Phase       string `json:"phase,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
 // RTMReport holds the complete Requirements Traceability Matrix for a rig.
 type RTMReport struct {
-	Rig         string    `json:"rig"`
-	GeneratedAt time.Time `json:"generated_at"`
-	ActivePhase string    `json:"active_phase,omitempty"`
-	Rows        []RTMRow  `json:"rows"`
-	TotalReqs   int       `json:"total_requirements"`
-	Passed      int       `json:"passed"`
-	Warnings    int       `json:"warnings"`
-	Pending     int       `json:"pending"`
-	Failures    int       `json:"failures"`
-	ScorePct    float64   `json:"score_percent"`
+	Rig         string       `json:"rig"`
+	GeneratedAt time.Time    `json:"generated_at"`
+	ActivePhase string       `json:"active_phase,omitempty"`
+	Rows        []RTMRow     `json:"rows"`
+	Beads       []RTMBeadRow `json:"beads,omitempty"`
+	TotalReqs   int          `json:"total_requirements"`
+	Passed      int          `json:"passed"`
+	Warnings    int          `json:"warnings"`
+	Pending     int          `json:"pending"`
+	Failures    int          `json:"failures"`
+	ScorePct    float64      `json:"score_percent"`
 }
 
 var reqHeadingRE = regexp.MustCompile(`(?m)^###\s+(\S.*)$`)
@@ -122,6 +134,13 @@ func ParseTestPlanDetailed(content string) []ParsedBlock {
 
 		switch key {
 		case "requirement":
+			if cur.Requirement != "" {
+				blocks = append(blocks, *cur)
+				cur = &ParsedBlock{
+					ReqID: cur.ReqID,
+					Phase: cur.Phase,
+				}
+			}
 			cur.Requirement = val
 			mode = ""
 		case "level":
@@ -145,7 +164,7 @@ func ParseTestPlanDetailed(content string) []ParsedBlock {
 		}
 	}
 
-	if cur != nil {
+	if cur != nil && (cur.Requirement != "" || cur.TestFile != "") {
 		blocks = append(blocks, *cur)
 	}
 
@@ -156,6 +175,8 @@ func ParseTestPlanDetailed(content string) []ParsedBlock {
 type BeadInfo struct {
 	ID          string   `json:"id"`
 	Title       string   `json:"title"`
+	Description string   `json:"description,omitempty"`
+	IssueType   string   `json:"issue_type,omitempty"`
 	Status      string   `json:"status"`
 	CloseReason string   `json:"close_reason,omitempty"`
 	Labels      []string `json:"labels,omitempty"`
@@ -183,6 +204,8 @@ func LoadRigBeads(townRoot, rig string) (map[string]BeadInfo, map[string]string)
 	var rows []struct {
 		ID          string   `json:"id"`
 		Title       string   `json:"title"`
+		Description string   `json:"description"`
+		IssueType   string   `json:"issue_type"`
 		Status      string   `json:"status"`
 		CloseReason string   `json:"close_reason"`
 		Labels      []string `json:"labels"`
@@ -199,6 +222,8 @@ func LoadRigBeads(townRoot, rig string) (map[string]BeadInfo, map[string]string)
 		info := BeadInfo{
 			ID:          id,
 			Title:       r.Title,
+			Description: r.Description,
+			IssueType:   r.IssueType,
 			Status:      r.Status,
 			CloseReason: r.CloseReason,
 			Labels:      r.Labels,
@@ -396,7 +421,122 @@ func GenerateRTM(townRoot, rigName string) (*RTMReport, error) {
 		report.ScorePct = float64(report.Passed) / float64(report.TotalReqs) * 100.0
 	}
 
+	// 5. Populate associated beads
+	seenBeads := make(map[string]bool)
+
+	// Add beads directly referenced in the requirement rows
+	for _, row := range report.Rows {
+		beadID := row.BeadID
+		if beadID == "" || strings.EqualFold(beadID, "closed") || strings.EqualFold(beadID, "pending") || strings.EqualFold(beadID, "unknown") {
+			continue
+		}
+		if seenBeads[beadID] {
+			continue
+		}
+		seenBeads[beadID] = true
+
+		info, exists := beadsByID[beadID]
+		desc := ""
+		title := ""
+		status := row.BeadStatus
+		if exists {
+			title = info.Title
+			desc = cleanBeadDescription(info)
+			if status == "" || status == "unknown" {
+				status = info.Status
+			}
+		}
+
+		reqLabel := row.ReqID
+		if row.Requirement != "" {
+			if idx := strings.Index(row.Requirement, ":"); idx > 0 && idx <= 35 {
+				reqLabel = strings.TrimSpace(row.Requirement[:idx])
+			}
+		}
+
+		report.Beads = append(report.Beads, RTMBeadRow{
+			ID:          beadID,
+			Status:      status,
+			Requirement: reqLabel,
+			Phase:       row.Phase,
+			Title:       title,
+			Description: desc,
+		})
+	}
+
+	// Add other implementation beads for the rig (from beadsByID / plan.md)
+	var remainingIDs []string
+	for id, info := range beadsByID {
+		if seenBeads[id] || isInternalPatrolBead(info) {
+			continue
+		}
+		remainingIDs = append(remainingIDs, id)
+	}
+	sort.Strings(remainingIDs)
+
+	for _, id := range remainingIDs {
+		info := beadsByID[id]
+		seenBeads[id] = true
+		desc := cleanBeadDescription(info)
+
+		reqLabel := "-"
+		if targetPath, ok := planBeadMap[id]; ok {
+			reqLabel = targetPath
+		}
+
+		report.Beads = append(report.Beads, RTMBeadRow{
+			ID:          id,
+			Status:      info.Status,
+			Requirement: reqLabel,
+			Title:       info.Title,
+			Description: desc,
+		})
+	}
+
 	return report, nil
+}
+
+func cleanBeadDescription(info BeadInfo) string {
+	desc := strings.TrimSpace(info.Description)
+	title := strings.TrimSpace(info.Title)
+	if desc != "" && !strings.EqualFold(desc, title) {
+		if strings.HasSuffix(desc, ": see architecture.md") && strings.HasSuffix(title, "per architecture") {
+			return title
+		}
+		lines := strings.Split(desc, "\n")
+		for _, l := range lines {
+			l = strings.TrimSpace(l)
+			if l != "" {
+				return l
+			}
+		}
+	}
+	if title != "" {
+		return title
+	}
+	return desc
+}
+
+func isInternalPatrolBead(info BeadInfo) bool {
+	if info.IssueType == "event" {
+		return true
+	}
+	lower := strings.ToLower(info.Title)
+	if strings.HasSuffix(lower, " patrol") || strings.HasPrefix(lower, "patrol") {
+		return true
+	}
+	if strings.HasPrefix(lower, "mol-") || strings.HasPrefix(lower, "wisp-") {
+		return true
+	}
+	for _, role := range []string{"analyst for", "architect for", "planner for", "qa for", "refinery for", "witness for", "deacon for"} {
+		if strings.Contains(lower, role) {
+			return true
+		}
+	}
+	if strings.Contains(info.ID, "-rig-") {
+		return true
+	}
+	return false
 }
 
 // Markdown formats the RTMReport as a clean GitHub-flavored markdown table.
@@ -448,6 +588,20 @@ func (r *RTMReport) Markdown() string {
 		}
 	}
 
+	if len(r.Beads) > 0 {
+		sb.WriteString("\n## Beads & Implementation Details\n\n")
+		sb.WriteString("| Bead | Status | Requirement / Target | Description |\n")
+		sb.WriteString("| :--- | :--- | :--- | :--- |\n")
+		for _, b := range r.Beads {
+			desc := b.Description
+			if desc == "" {
+				desc = b.Title
+			}
+			desc = strings.ReplaceAll(desc, "|", "\\|")
+			sb.WriteString(fmt.Sprintf("| `%s` | %s | %s | %s |\n", b.ID, b.Status, b.Requirement, desc))
+		}
+	}
+
 	return sb.String()
 }
 
@@ -469,6 +623,11 @@ func (r *RTMReport) RenderTerminal() string {
 		style.Column{Name: "Audit", Width: 8},
 	)
 
+	reqIDCounts := make(map[string]int)
+	for _, row := range r.Rows {
+		reqIDCounts[row.ReqID]++
+	}
+
 	for _, row := range r.Rows {
 		auditStr := style.Success.Render("✓ PASS")
 		if row.AuditStatus == AuditWarn {
@@ -480,6 +639,12 @@ func (r *RTMReport) RenderTerminal() string {
 		}
 
 		req := row.ReqID
+		if idx := strings.Index(row.Requirement, ":"); idx > 0 && idx <= 35 {
+			short := strings.TrimSpace(row.Requirement[:idx])
+			if reqIDCounts[row.ReqID] > 1 || strings.HasPrefix(strings.ToLower(row.ReqID), "phase-") {
+				req = short
+			}
+		}
 		if len(req) > 24 {
 			req = req[:21] + "..."
 		}
@@ -523,6 +688,44 @@ func (r *RTMReport) RenderTerminal() string {
 				sb.WriteString(fmt.Sprintf("  %s %s: %s\n", badge, style.Bold.Render(row.ReqID), row.AuditMessage))
 			}
 		}
+	}
+
+	if len(r.Beads) > 0 {
+		sb.WriteString("\n" + style.Bold.Render("Beads & Implementation Details:") + "\n\n")
+
+		beadTbl := style.NewTable(
+			style.Column{Name: "Bead", Width: 12},
+			style.Column{Name: "Status", Width: 10},
+			style.Column{Name: "Requirement", Width: 26},
+			style.Column{Name: "Description", Width: 54},
+		)
+
+		for _, b := range r.Beads {
+			statusStr := style.Dim.Render(b.Status)
+			if b.Status == "open" || b.Status == "in_progress" {
+				statusStr = style.Warning.Render(b.Status)
+			} else if b.Status == "closed" {
+				statusStr = style.Success.Render("closed")
+			}
+
+			req := b.Requirement
+			if len(req) > 24 {
+				req = req[:21] + "..."
+			}
+
+			desc := b.Description
+			if desc == "" {
+				desc = b.Title
+			}
+			if len(desc) > 52 {
+				desc = desc[:49] + "..."
+			}
+
+			beadTbl.AddRow(b.ID, statusStr, req, desc)
+		}
+
+		sb.WriteString(beadTbl.Render())
+		sb.WriteString("\n")
 	}
 
 	return sb.String()
