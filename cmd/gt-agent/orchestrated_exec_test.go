@@ -1527,3 +1527,20 @@ func TestWaitWithTimeoutReapsOutputHoldingChildrenAfterShellExit(t *testing.T) {
 		})
 	}
 }
+
+func TestRewriteUnittestToWorkdir_subshellNotMangled(t *testing.T) {
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "finally",
+		TestRunner:      "pytest",
+		QAVerifyCommand: "test -f finally/Dockerfile && (cd finally && docker build -f Dockerfile -t finally-foundation-check .) && (cd finally/backend && uv run pytest tests/test_schema.py -q)",
+	}
+	cmd := "cd test4/mayor/rig && " + v.QAVerifyCommand
+	fixed, ok := rewriteUnittestToWorkdir(cmd, "test4", v)
+	if !ok {
+		t.Fatal("expected normalize rewrite")
+	}
+	want := "cd test4/mayor/rig && test -f finally/Dockerfile && (cd finally && docker build -f Dockerfile -t finally-foundation-check .) && (cd finally/backend && uv run python3 -m pytest tests/test_schema.py -q)"
+	if fixed != want {
+		t.Fatalf("got %q want %q", fixed, want)
+	}
+}

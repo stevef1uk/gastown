@@ -760,6 +760,18 @@ func isUvicornCommand(cmd string) bool {
 	return uvicornServerStartRE.MatchString(lower)
 }
 
+func isInsideSubshell(cmd string, idx int) bool {
+	depth := 0
+	for i := 0; i < idx && i < len(cmd); i++ {
+		if cmd[i] == '(' {
+			depth++
+		} else if cmd[i] == ')' && depth > 0 {
+			depth--
+		}
+	}
+	return depth > 0
+}
+
 func stripCDLayoutPrefix(cmd, layout string) string {
 	layout = strings.Trim(strings.TrimSpace(layout), "/")
 	if layout == "" {
@@ -771,13 +783,13 @@ func stripCDLayoutPrefix(cmd, layout string) string {
 		"cd ./" + layout + " && ",
 		"cd " + layout + "/ && ",
 	} {
-		if idx := strings.Index(lower, pat); idx >= 0 {
+		if idx := strings.Index(lower, pat); idx >= 0 && !isInsideSubshell(cmd, idx) {
 			return strings.TrimSpace(cmd[:idx] + cmd[idx+len(pat):])
 		}
 	}
 	// cd layout/subdir/something && — strip to just the remaining command.
 	for _, prefix := range []string{"cd " + layout + "/"} {
-		if idx := strings.Index(lower, prefix); idx >= 0 {
+		if idx := strings.Index(lower, prefix); idx >= 0 && !isInsideSubshell(cmd, idx) {
 			rest := cmd[idx+len(prefix):]
 			if sIdx := strings.Index(rest, " && "); sIdx >= 0 {
 				return strings.TrimSpace(cmd[:idx] + rest[sIdx+4:])
@@ -852,7 +864,7 @@ func stripFirstCDPrefix(cmd string) string {
 	return ""
 }
 
-// commandHasLayoutCD reports whether cmd has a separate "cd <layout>" command (not part of cd <rig>/mayor/rig).
+// commandHasLayoutCD reports whether cmd has a top-level "cd <layout>" command (not inside subshells and not part of cd <rig>/mayor/rig).
 func commandHasLayoutCD(cmd, layout string) bool {
 	layout = strings.Trim(strings.TrimSpace(layout), "/")
 	if layout == "" {
@@ -861,7 +873,7 @@ func commandHasLayoutCD(cmd, layout string) bool {
 	lower := strings.ToLower(cmd)
 	layoutLower := strings.ToLower(layout)
 	// Match "cd layout" or "cd ./layout" followed by " && " or end of string
-	// but NOT when it's part of "cd <rig>/mayor/rig" (combined path).
+	// but NOT when it's part of "cd <rig>/mayor/rig" (combined path) and NOT inside subshell (...).
 	patterns := []string{
 		"cd " + layoutLower + " && ",
 		"cd " + layoutLower + " ",
@@ -869,16 +881,37 @@ func commandHasLayoutCD(cmd, layout string) bool {
 		"cd ./" + layoutLower + " ",
 	}
 	for _, p := range patterns {
-		if strings.Contains(lower, p) {
-			// Ensure it's not part of "cd <rig>/mayor/rig"
-			if strings.Contains(lower, p+"mayor/rig") {
+		searchStart := 0
+		for {
+			idx := strings.Index(lower[searchStart:], p)
+			if idx < 0 {
+				break
+			}
+			pos := searchStart + idx
+			searchStart = pos + len(p)
+			if strings.Contains(lower[pos:], p+"mayor/rig") {
 				continue
 			}
+			if !isInsideSubshell(cmd, pos) {
+				return true
+			}
+		}
+	}
+	// Also check top-level "/layout &&" patterns (e.g. in complex chains, not inside subshell)
+	pat := "/" + layoutLower + " &&"
+	searchStart := 0
+	for {
+		idx := strings.Index(lower[searchStart:], pat)
+		if idx < 0 {
+			break
+		}
+		pos := searchStart + idx
+		searchStart = pos + len(pat)
+		if !isInsideSubshell(cmd, pos) {
 			return true
 		}
 	}
-	// Also check "/layout &&" patterns (e.g. in complex chains)
-	return strings.Contains(lower, "/"+layoutLower+" &&")
+	return false
 }
 
 // startsWithCDLayout reports whether cmd begins immediately with a cd into the layout directory.
