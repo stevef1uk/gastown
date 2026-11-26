@@ -110,6 +110,7 @@ Every agent role has a clear behavioral contract in Markdown.
 ## 5. Architectural Deep Dives & Rig Showcases
 
 For detailed technical deep dives and architectural diagrams, see:
+- [Continuous Agent Learning & Feedback Architecture](continuous-agent-learning.md): Multi-tiered persistent ring-buffer learnings (`polecat_learnings`), Mayor recovery engine, Codeindex blast-radius mapping, and phase boundary isolation.
 - [Platform Re-Architecture & Infrastructure Extensions](platform-rearchitecture.md): Replacing TMUX with NATS, introducing the `gt-agent` LLM harness, `gt-orchestrator`, and Freeride mTLS reverse proxy.
 - [Autonomous System Architectures Showcase](system-architectures.md): Real-world production architectures delivered by Gas Town rigs (LinkShelf bookmark manager and FinAlly financial intelligence platform).
 
