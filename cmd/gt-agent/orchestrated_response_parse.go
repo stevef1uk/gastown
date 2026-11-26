@@ -899,6 +899,18 @@ func stripLeadingMarkdownBoldFromShell(cmd string) string {
 	return trimmed
 }
 
+var (
+	trailingStarsRE   = regexp.MustCompile(`\*{1,3}\s*$`)
+	htmlNoiseTagsRE   = regexp.MustCompile(`(?i)</?(?:summary|details|code|pre|span|div|p)\b[^>]*>`)
+)
+
+func stripHTMLTagsFromShellCommand(cmd string) string {
+	if !strings.Contains(cmd, "<") || !strings.Contains(cmd, ">") {
+		return cmd
+	}
+	return strings.TrimSpace(htmlNoiseTagsRE.ReplaceAllString(cmd, ""))
+}
+
 // sanitizeOrchestratedShellCommand trims model prose/JSON glued onto shell commands.
 func sanitizeOrchestratedShellCommand(cmd string) (string, bool) {
 	changed := false
@@ -911,6 +923,10 @@ func sanitizeOrchestratedShellCommand(cmd string) (string, bool) {
 		changed = true
 	}
 	if stripped := stripOrchestratedShellBackticks(cmd); stripped != cmd {
+		cmd = stripped
+		changed = true
+	}
+	if stripped := stripHTMLTagsFromShellCommand(cmd); stripped != cmd {
 		cmd = stripped
 		changed = true
 	}
@@ -933,7 +949,6 @@ func sanitizeOrchestratedShellCommand(cmd string) (string, bool) {
 	return strings.TrimSpace(cmd), changed
 }
 
-var trailingStarsRE = regexp.MustCompile(`\*{1,3}\s*$`)
 
 func trimJSONGluedToShellCommand(cmd string) (string, bool) {
 	for _, needle := range []string{`{"outcome"`, `{" outcome"`} {

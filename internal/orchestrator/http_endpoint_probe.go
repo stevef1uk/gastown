@@ -65,7 +65,7 @@ func appendAPIProbe(spec *APISmokeSpec, seen map[string]bool, method, path, deta
 		return
 	}
 	path = normalizeSmokePath(path)
-	if path == "" || !strings.HasPrefix(path, "/") {
+	if path == "" || !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "/static/") || strings.HasPrefix(path, "/assets/") {
 		return
 	}
 	method = strings.ToUpper(strings.TrimSpace(method))

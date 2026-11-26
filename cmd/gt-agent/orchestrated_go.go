@@ -329,6 +329,12 @@ func validateGoImplementationCommand(cmd, townRoot, rig, mayorRigDir, activeBead
 		return fmt.Errorf("go test does not apply to web static assets (./web/...) — use EDIT:/WRITE: on CSS/JS/HTML files, then bd close when the artifact validates")
 	}
 	if isBeadCloseCommand(cmd) && !verifyOK {
+		if id := strings.Trim(extractBeadIDFromBdClose(cmd), `"'`); id != "" && (activeBead == "" || strings.EqualFold(id, activeBead)) {
+			activeBead = id
+			if beadPath == "" {
+				beadPath = orchestrator.ImplementBeadPathForID(townRoot, rig, activeBead, v)
+			}
+		}
 		if implementationVerifyAttemptBeforeBdClose(cmd, townRoot, rig, activeBead, v) {
 			return nil
 		}

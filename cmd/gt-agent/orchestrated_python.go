@@ -223,6 +223,9 @@ func validatePythonImplementationCommand(cmd, townRoot, rig, activeBead string, 
 		}
 	}
 	if isBeadCloseCommand(cmd) && !verifyOK {
+		if id := strings.Trim(extractBeadIDFromBdClose(cmd), `"'`); id != "" && (activeBead == "" || strings.EqualFold(id, activeBead)) {
+			activeBead = id
+		}
 		if implementationVerifyAttemptBeforeBdClose(cmd, townRoot, rig, activeBead, v) {
 			return nil
 		}

@@ -4114,8 +4114,8 @@ func isQARuntimeSmokeCommandOK(cmd, townRoot, rig string, v orchestrator.Workflo
 	}
 	// Accept both `go run` and `go build` + run binary patterns
 	hasGoRun := strings.Contains(lower, "go run")
-	hasGoBuildRun := strings.Contains(lower, "go build") && (strings.Contains(lower, "./server") || strings.Contains(lower, "./cmd/server"))
-	hasServerPath := strings.Contains(lower, "cmd/server") ||
+	hasGoBuildRun := strings.Contains(lower, "go build") && (strings.Contains(lower, "cmd/") || strings.Contains(lower, "./server"))
+	hasServerPath := strings.Contains(lower, "cmd/") ||
 		strings.Contains(lower, " .") ||
 		strings.Contains(lower, " ./")
 	if !(hasGoRun || hasGoBuildRun) || !hasServerPath {

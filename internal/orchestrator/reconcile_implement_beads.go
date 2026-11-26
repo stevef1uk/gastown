@@ -816,7 +816,10 @@ func isGoStdlib(mod string) bool {
 		"archive/zip": true, "archive/tar": true, "compress/gzip": true,
 		"image": true, "image/png": true, "image/jpeg": true,
 		"text/scanner": true, "go/ast": true, "go/parser": true,
-		"testing": true,
+		"testing": true, "embed": true, "syscall": true, "unicode": true,
+		"unicode/utf8": true, "unicode/utf16": true, "io/fs": true,
+		"os/exec": true, "os/signal": true, "os/user": true, "slices": true,
+		"maps": true, "cmp": true, "mime": true, "hash": true,
 	}
 	// Check common prefixes
 	prefixes := []string{"golang.org/", "github.com/", "gopkg.in/", "google.golang.org/"}

@@ -139,11 +139,16 @@ func normalizeSmokePath(path string) string {
 func defaultPOSTBodyFromSpec(text string) string {
 	lower := strings.ToLower(text)
 	switch {
+	case strings.Contains(lower, `"name"`) && !strings.Contains(lower, `"title"`):
+		return `{"name":"qa-smoke"}`
 	case strings.Contains(lower, `"title"`) && strings.Contains(lower, `"url"`):
 		return `{"title":"qa-smoke","url":"https://example.com/qa"}`
 	case strings.Contains(lower, "bookmark"):
 		return `{"title":"qa-smoke","url":"https://example.com/qa"}`
 	default:
+		if strings.Contains(lower, "name") && !strings.Contains(lower, "title") {
+			return `{"name":"qa-smoke"}`
+		}
 		return `{"title":"qa-smoke","url":"https://example.com/qa"}`
 	}
 }

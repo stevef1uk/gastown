@@ -18,7 +18,7 @@ var (
 	docBacktickDBRE     = regexp.MustCompile("`(\\.?/?[a-zA-Z0-9][a-zA-Z0-9_.-]*\\.(?:db|sqlite3?|wal))`")
 	sqlOpenPathRE       = regexp.MustCompile(`(?i)sql\.Open\([^,]+,\s*["']([^"']+)["']`)
 	relativePersistRE   = regexp.MustCompile(`(?:^|[\s"'(])(\.?/?[a-zA-Z0-9][a-zA-Z0-9_.-]*\.(?:db|sqlite3?|wal))\b`)
-	goRunServerRE       = regexp.MustCompile(`(?i)\bgo\s+run\s+(?:\./)?cmd/server(?:/main\.go)?\b`)
+	goRunServerRE       = regexp.MustCompile(`(?i)\bgo\s+run\s+(?:\./)?cmd/[A-Za-z0-9_-]+(?:/main\.go)?\b`)
 	goRunMainRE         = regexp.MustCompile(`(?i)\bgo\s+run\s+(?:\./)?(?:main\.go|.)\b`)
 )
 
@@ -143,8 +143,14 @@ func deriveRuntimeSmokeServerStart(v WorkflowValidation, mergedDocs string) stri
 				return strings.TrimSpace(m)
 			}
 		}
-		// Derive the entrypoint from required_files: use cmd/server/main.go when the
-		// layout declares it, otherwise flat-layout main.go at the layout root.
+		// Derive the entrypoint from required_files: look for any cmd/<name>/main.go
+		for _, f := range v.UnionRequiredFiles() {
+			f = filepath.ToSlash(f)
+			if idx := strings.Index(f, "/cmd/"); idx >= 0 && strings.HasSuffix(f, "/main.go") {
+				rel := f[idx+1:]
+				return "go run ./" + filepath.Dir(rel)
+			}
+		}
 		if hasRequiredFileSuffix(v, "/cmd/server/main.go") {
 			return "go run ./cmd/server/main.go"
 		}

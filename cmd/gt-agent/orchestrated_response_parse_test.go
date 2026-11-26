@@ -995,3 +995,21 @@ func TestIsOrchestratedShellNoiseLine_thought(t *testing.T) {
 	}
 }
 
+func TestStripHTMLTagsFromShellCommand(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"</code> cat finally/backend/tests/test_portfolio_api.py</summary>", "cat finally/backend/tests/test_portfolio_api.py"},
+		{"<details><summary><code>CMD:</code> ls</summary></details>", "CMD: ls"},
+		{"cat architecture.md", "cat architecture.md"},
+	}
+	for _, c := range cases {
+		got := stripHTMLTagsFromShellCommand(c.in)
+		if got != c.want {
+			t.Errorf("stripHTMLTagsFromShellCommand(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+

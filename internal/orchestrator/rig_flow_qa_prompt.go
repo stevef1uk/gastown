@@ -162,6 +162,10 @@ func rigFlowQAGoWebStaticSmokeBlock(v WorkflowValidation) string {
 	if layout == "" {
 		layout = "."
 	}
+	serverStart := strings.TrimSpace(deriveRuntimeSmokeServerStart(v, ""))
+	if serverStart == "" {
+		serverStart = "go run ./cmd/server"
+	}
 	return fmt.Sprintf(`## Runtime smoke (static web — **no HTTP API** in SPEC)
 
 SPEC/architecture define **no** JSON API routes to curl. gt-agent probes **GET /** and static assets from **index.html** only.
@@ -169,18 +173,25 @@ SPEC/architecture define **no** JSON API routes to curl. gt-agent probes **GET /
 One CMD (gt-agent injects curls — do not hand-pick paths):
 
 `+"```"+`
-CMD: cd {{rig}}/mayor/rig/%s && go run ./cmd/server
+CMD: cd {{rig}}/mayor/rig/%s && %s
 `+"```"+`
 
 Do **not** require POST or JSON API paths unless SPEC adds them later. Use **failure** for 404 static assets; **architecture_failure** only when tests pass but documented static routing is wrong.
 
-%s`, layout, RigFlowStaticURLContractGuidance)
+%s`, layout, serverStart, RigFlowStaticURLContractGuidance)
 }
 
 func rigFlowQAGoWebAPISmokeBlock(v WorkflowValidation, spec APISmokeSpec) string {
 	layout := strings.Trim(strings.TrimSpace(v.LayoutRoot), "/")
 	if layout == "" {
 		layout = "."
+	}
+	serverStart := strings.TrimSpace(spec.ServerStart)
+	if serverStart == "" {
+		serverStart = strings.TrimSpace(deriveRuntimeSmokeServerStart(v, ""))
+	}
+	if serverStart == "" {
+		serverStart = "go run ./cmd/server"
 	}
 	var paths []string
 	for _, p := range spec.Probes {
@@ -207,7 +218,7 @@ func rigFlowQAGoWebAPISmokeBlock(v WorkflowValidation, spec APISmokeSpec) string
 Unit tests alone miss integration bugs. One CMD starting the server (gt-agent **frees port 8080** and stops the server when the step finishes):
 
 `+"```"+`
-CMD: cd {{rig}}/mayor/rig/%s && go run ./cmd/server
+CMD: cd {{rig}}/mayor/rig/%s && %s
 `+"```"+`
 
 | Check | How |
@@ -219,9 +230,9 @@ CMD: cd {{rig}}/mayor/rig/%s && go run ./cmd/server
 
 %s
 
-gt-agent rewrites `+"`go run ./cmd/server`"+` into background server + curls for **only** paths in SPEC/architecture/plan — not invented API routes. Persistence files listed in docs are deleted before the probe so prior QA runs do not leave rows that fail empty-array checks.
+gt-agent rewrites `+"`%s`"+` into background server + curls for **only** paths in SPEC/architecture/plan — not invented API routes. Persistence files listed in docs are deleted before the probe so prior QA runs do not leave rows that fail empty-array checks.
 
-If smoke fails, next message **JSON only** with HTTP status and bead IDs — do not repeat long smoke CMDs.`, routeNote, layout, RigFlowStaticURLContractGuidance)
+If smoke fails, next message **JSON only** with HTTP status and bead IDs — do not repeat long smoke CMDs.`, routeNote, layout, serverStart, RigFlowStaticURLContractGuidance, serverStart)
 }
 
 func rigFlowE2ESmokeBlock(v WorkflowValidation, mayorRigDir string) string {
