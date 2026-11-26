@@ -89,6 +89,8 @@ func planReviewSummaryClaimsMissingImplementBead(lower string) bool {
 		strings.Contains(lower, "bead coverage is missing") ||
 		strings.Contains(lower, "no 'implement") ||
 		strings.Contains(lower, "no implement bead") ||
+		strings.Contains(lower, "zero open") ||
+		strings.Contains(lower, "zero open/in_progress") ||
 		strings.Contains(lower, "do not appear in this session's bd list")
 }
 

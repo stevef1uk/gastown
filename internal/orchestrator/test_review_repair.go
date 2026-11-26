@@ -194,6 +194,14 @@ func selectTestReviewRepair(rigDir string, v WorkflowValidation, plan, summary s
 			owners = byPath[path]
 		}
 		if len(owners) != 1 {
+			// When the review specifically targets other tests, do not block repair
+			// because an un-cited, unbroken test from an earlier completed phase lacks
+			// an implementation bead in the database.
+			hasExplicitRepair := strings.Contains(summary, "Test repair:") || strings.Contains(summary, "Implementation repair:")
+			reported := strings.Contains(summary, test) || strings.Contains(summary, path) || strings.Contains(summary, testPath)
+			if hasExplicitRepair && !reported && !broken[test] && v.HasPhasedDelivery() && v.IsPhaseCompleted(phase) && phase != v.ActivePhaseID() {
+				continue
+			}
 			return gap(fmt.Sprintf("TEST_PLAN.md row %s test %s has no unique implementation bead owner; correct its test path and Bead ID", block.ReqID, test))
 		}
 		if phase == "" && v.HasPhasedDelivery() {

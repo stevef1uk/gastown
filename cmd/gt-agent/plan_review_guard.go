@@ -24,7 +24,7 @@ func (r *stateRunner) validatePlanningRework() error {
 }
 
 func (r *stateRunner) rejectPlanReviewSpuriousFailure(outcome, summary string) (string, bool) {
-	if r == nil || r.hooks.RequireExplicitOutcome || r.hooks.Artifacts != "plan_review" || !isOrchestratedFailureOutcome(outcome) {
+	if r == nil || r.hooks.Artifacts != "plan_review" || !isOrchestratedFailureOutcome(outcome) {
 		return "", false
 	}
 	if reason := orchestrator.PlanReviewSpuriousFailureReason(r.townRoot, r.rig, summary, r.v); reason != "" {
