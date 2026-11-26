@@ -186,6 +186,14 @@ func TestGenerateRTM(t *testing.T) {
 	if strings.Contains(termSummary, "Implementation & Component Alignment") {
 		t.Errorf("summary terminal output should not contain detailed bead table: %s", termSummary)
 	}
+
+	htmlReport := report.HTML()
+	if !strings.Contains(htmlReport, "<!DOCTYPE html>") || !strings.Contains(htmlReport, "Requirements Traceability Matrix") {
+		t.Errorf("HTML report missing doctype or header: %s", htmlReport)
+	}
+	if !strings.Contains(htmlReport, "beadSearch") || !strings.Contains(htmlReport, "table-wrapper") {
+		t.Errorf("HTML report missing search or scrollable table wrapper")
+	}
 }
 
 func TestCleanRequirementTitle(t *testing.T) {

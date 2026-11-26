@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/orchestrator"
@@ -16,6 +17,8 @@ import (
 var (
 	rigRTMJSON     bool
 	rigRTMMarkdown bool
+	rigRTMHTML     bool
+	rigRTMWeb      bool
 	rigRTMOutput   string
 	rigRTMAudit    bool
 	rigRTMTown     string
@@ -54,7 +57,9 @@ func init() {
 	rigRTMCmd.Flags().StringVar(&rigRTMTown, "town", "", "Town root (default: cwd walk-up or GT_TOWN_ROOT)")
 	rigRTMCmd.Flags().BoolVar(&rigRTMJSON, "json", false, "Output as JSON")
 	rigRTMCmd.Flags().BoolVarP(&rigRTMMarkdown, "markdown", "m", false, "Output as Markdown")
-	rigRTMCmd.Flags().StringVarP(&rigRTMOutput, "output", "o", "", "Write Markdown report to file")
+	rigRTMCmd.Flags().BoolVar(&rigRTMHTML, "html", false, "Output interactive HTML report")
+	rigRTMCmd.Flags().BoolVarP(&rigRTMWeb, "web", "w", false, "Generate and save interactive HTML report to <rig>/mayor/rig/rtm.html")
+	rigRTMCmd.Flags().StringVarP(&rigRTMOutput, "output", "o", "", "Write report to file (.md or .html)")
 	rigRTMCmd.Flags().BoolVar(&rigRTMAudit, "audit", false, "Exit non-zero if any requirement has gaps or test failures")
 	rigRTMCmd.Flags().BoolVarP(&rigRTMSummary, "summary", "s", false, "Executive summary view: show requirements matrix and delivery counts without full bead breakdown")
 
@@ -62,7 +67,9 @@ func init() {
 
 	mayorWorkflowRTMCmd.Flags().BoolVar(&rigRTMJSON, "json", false, "Output as JSON")
 	mayorWorkflowRTMCmd.Flags().BoolVarP(&rigRTMMarkdown, "markdown", "m", false, "Output as Markdown")
-	mayorWorkflowRTMCmd.Flags().StringVarP(&rigRTMOutput, "output", "o", "", "Write Markdown report to file")
+	mayorWorkflowRTMCmd.Flags().BoolVar(&rigRTMHTML, "html", false, "Output interactive HTML report")
+	mayorWorkflowRTMCmd.Flags().BoolVarP(&rigRTMWeb, "web", "w", false, "Generate and save interactive HTML report to <rig>/mayor/rig/rtm.html")
+	mayorWorkflowRTMCmd.Flags().StringVarP(&rigRTMOutput, "output", "o", "", "Write report to file (.md or .html)")
 	mayorWorkflowRTMCmd.Flags().BoolVar(&rigRTMAudit, "audit", false, "Exit non-zero if any requirement has gaps or test failures")
 	mayorWorkflowRTMCmd.Flags().BoolVarP(&rigRTMSummary, "summary", "s", false, "Executive summary view: show requirements matrix and delivery counts without full bead breakdown")
 
@@ -122,16 +129,39 @@ func generateAndOutputRTM(townRoot, rigName string) error {
 		return err
 	}
 
+	if rigRTMWeb {
+		targetPath := filepath.Join(townRoot, rigName, "mayor", "rig", "rtm.html")
+		htmlContent := report.HTML()
+		if err := os.WriteFile(targetPath, []byte(htmlContent), 0644); err != nil {
+			return fmt.Errorf("write interactive HTML report to %s: %w", targetPath, err)
+		}
+		fmt.Printf("%s Wrote interactive HTML report to %s\n", style.Success.Render("✓"), targetPath)
+		fmt.Printf("  Open in browser: file://%s\n\n", targetPath)
+		if !rigRTMHTML && !rigRTMJSON && !rigRTMMarkdown && rigRTMOutput == "" {
+			fmt.Print(report.RenderTerminal(rigRTMSummary))
+		}
+		return nil
+	}
+
 	if rigRTMOutput != "" {
 		targetPath := rigRTMOutput
 		if !filepath.IsAbs(targetPath) {
 			targetPath = filepath.Join(townRoot, rigName, "mayor", "rig", targetPath)
 		}
-		md := report.Markdown()
-		if err := os.WriteFile(targetPath, []byte(md), 0644); err != nil {
+		var content []byte
+		isHTML := strings.HasSuffix(strings.ToLower(targetPath), ".html") || strings.HasSuffix(strings.ToLower(targetPath), ".htm") || rigRTMHTML
+		if isHTML {
+			content = []byte(report.HTML())
+		} else {
+			content = []byte(report.Markdown())
+		}
+		if err := os.WriteFile(targetPath, content, 0644); err != nil {
 			return fmt.Errorf("write traceability report to %s: %w", targetPath, err)
 		}
 		fmt.Printf("%s Wrote traceability report to %s\n", style.Success.Render("✓"), targetPath)
+		if isHTML {
+			fmt.Printf("  Open in browser: file://%s\n", targetPath)
+		}
 	}
 
 	if rigRTMJSON {
@@ -140,6 +170,8 @@ func generateAndOutputRTM(townRoot, rigName string) error {
 			return err
 		}
 		fmt.Println(string(data))
+	} else if rigRTMHTML && rigRTMOutput == "" {
+		fmt.Println(report.HTML())
 	} else if rigRTMMarkdown {
 		fmt.Println(report.Markdown())
 	} else if rigRTMOutput == "" {
