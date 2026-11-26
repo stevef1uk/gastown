@@ -513,7 +513,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 				} else if (o == "failure" || o == "fail") && turn < maxTurns && (turn <= 3 || runner.hooks.Artifacts == "implementation") && !runner.hooks.RequireExplicitOutcome {
 					orchestratedPrintf("[gt-agent] ignoring premature failure JSON (turn %d/%d); try to fix the issue first\n", turn, maxTurns)
 					recordAttemptFeedback("Failure JSON ignored on early turn. Review command output, try to fix the issue, then send failure if truly blocked.\n")
-					feedback += "\n\nFailure JSON was emitted before command results were available and was not accepted. Read the actual output above, repair any remaining blocker, and send a JSON-only verdict on a later turn."
+					feedback += "\n\nFailure JSON was emitted before command results were available and was not accepted. Review the actual command output above: if all checks and tests passed cleanly, send a JSON-only outcome approving the step (task_passed or all_passed). If genuine defects remain, explain the evidence in your failure verdict."
 					pendingFailureSummary = s
 				} else if (o == "failure" || o == "fail") && turn < maxTurns && task.State == "test_review" {
 					if vErr := validateOutcomeForTask(task, townRoot, rig, o, s); vErr != nil {
