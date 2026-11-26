@@ -194,7 +194,14 @@ func LoadRigBeads(townRoot, rig string) (map[string]BeadInfo, map[string]string)
 
 	args := beads.InjectFlatForListJSON([]string{"list", "--all", "--json", "--limit=0"})
 	cmd := exec.Command("bd", args...)
-	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	cmd.Dir = filepath.Dir(beadsDir)
+	cmd.Env = append(os.Environ(),
+		"BEADS_DIR="+beadsDir,
+		"BEADS_DOLT_AUTO_START=0",
+		"BEADS_DOLT_SERVER_HOST=127.0.0.1",
+		"BEADS_DOLT_SERVER_PORT=3307",
+		"BEADS_DOLT_PORT=3307",
+	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return byID, byPath
