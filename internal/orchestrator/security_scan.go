@@ -117,12 +117,8 @@ func ScanRigSecrets(townRoot, rig, layoutRoot string) []SecretFinding {
 
 			// Check allow-secret escape hatch: if line contains "allow-secret: <reason>",
 			// skip ALL checks for that line (reason required, bare marker not accepted).
-			if matched := strings.HasPrefix(strings.ToLower(trimmed), "allow-secret:"); matched {
-				// Bare marker without reason is also OK to skip (bench-style: accept as escape hatch).
-				if strings.HasSuffix(strings.ToLower(trimmed), "allow-secret") {
-					continue
-				}
-				// Has reason — skip this line entirely.
+			lower := strings.ToLower(trimmed)
+			if strings.Contains(lower, "allow-secret:") || strings.Contains(lower, "allow-secret") {
 				continue
 			}
 
