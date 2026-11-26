@@ -181,4 +181,82 @@ func TestGenerateRTM(t *testing.T) {
 	if !strings.Contains(term, "Requirements Traceability Matrix") {
 		t.Errorf("terminal output missing header: %s", term)
 	}
+
+	termSummary := report.RenderTerminal(true)
+	if strings.Contains(termSummary, "Implementation & Component Alignment") {
+		t.Errorf("summary terminal output should not contain detailed bead table: %s", termSummary)
+	}
+}
+
+func TestCleanRequirementTitle(t *testing.T) {
+	tests := []struct {
+		reqID string
+		raw   string
+		want  string
+	}{
+		{
+			reqID: "phase-1-core",
+			raw:   "Domain validation: project name trimmed to 1-80 code points",
+			want:  "Domain validation",
+		},
+		{
+			reqID: "phase-1-app",
+			raw:   "PostgreSQL store runs the same contract against a dedicated disposable test database",
+			want:  "PostgreSQL store",
+		},
+		{
+			reqID: "phase-2-kanban",
+			raw:   "Task REST API (list, create, patch, delete) with server-owned status",
+			want:  "Task REST API",
+		},
+		{
+			reqID: "phase-3-browser",
+			raw:   "Browser E2E: real clicks, typing, and selections drive the UI",
+			want:  "Browser E2E",
+		},
+	}
+
+	for _, tc := range tests {
+		got := CleanRequirementTitle(tc.reqID, tc.raw)
+		if got != tc.want {
+			t.Errorf("CleanRequirementTitle(%q, %q) = %q; want %q", tc.reqID, tc.raw, got, tc.want)
+		}
+	}
+}
+
+func TestClassifyBead(t *testing.T) {
+	cat, art, purp := ClassifyBead("taskboard/deploy/k8s/service.yaml", "tasktracker", false, "", "", "")
+	if cat != CategoryInfrastructure {
+		t.Errorf("expected CategoryInfrastructure, got %q", cat)
+	}
+	if art != "deploy/k8s/service.yaml" {
+		t.Errorf("expected deploy/k8s/service.yaml, got %q", art)
+	}
+	if !strings.Contains(purp, "Service") {
+		t.Errorf("expected Service purpose, got %q", purp)
+	}
+
+	cat, art, purp = ClassifyBead("taskboard/go.mod", "tasktracker", false, "", "", "")
+	if cat != CategoryBuild {
+		t.Errorf("expected CategoryBuild, got %q", cat)
+	}
+	if art != "go.mod" {
+		t.Errorf("expected go.mod, got %q", art)
+	}
+
+	cat, art, purp = ClassifyBead("taskboard/internal/web/app.go", "tasktracker", false, "", "", "")
+	if cat != CategoryComponentWeb {
+		t.Errorf("expected CategoryComponentWeb, got %q", cat)
+	}
+	if art != "internal/web/app.go" {
+		t.Errorf("expected internal/web/app.go, got %q", art)
+	}
+
+	cat, art, purp = ClassifyBead("taskboard/internal/model/model.go", "tasktracker", true, "Domain validation", "Implement taskboard/internal/model/model.go per architecture", "")
+	if cat != CategoryRequirement {
+		t.Errorf("expected CategoryRequirement, got %q", cat)
+	}
+	if !strings.Contains(purp, "Domain validation") {
+		t.Errorf("expected Domain validation in purpose, got %q", purp)
+	}
 }

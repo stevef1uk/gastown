@@ -19,6 +19,7 @@ var (
 	rigRTMOutput   string
 	rigRTMAudit    bool
 	rigRTMTown     string
+	rigRTMSummary  bool
 )
 
 var rigRTMCmd = &cobra.Command{
@@ -55,6 +56,7 @@ func init() {
 	rigRTMCmd.Flags().BoolVarP(&rigRTMMarkdown, "markdown", "m", false, "Output as Markdown")
 	rigRTMCmd.Flags().StringVarP(&rigRTMOutput, "output", "o", "", "Write Markdown report to file")
 	rigRTMCmd.Flags().BoolVar(&rigRTMAudit, "audit", false, "Exit non-zero if any requirement has gaps or test failures")
+	rigRTMCmd.Flags().BoolVarP(&rigRTMSummary, "summary", "s", false, "Executive summary view: show requirements matrix and delivery counts without full bead breakdown")
 
 	rigCmd.AddCommand(rigRTMCmd)
 
@@ -62,6 +64,7 @@ func init() {
 	mayorWorkflowRTMCmd.Flags().BoolVarP(&rigRTMMarkdown, "markdown", "m", false, "Output as Markdown")
 	mayorWorkflowRTMCmd.Flags().StringVarP(&rigRTMOutput, "output", "o", "", "Write Markdown report to file")
 	mayorWorkflowRTMCmd.Flags().BoolVar(&rigRTMAudit, "audit", false, "Exit non-zero if any requirement has gaps or test failures")
+	mayorWorkflowRTMCmd.Flags().BoolVarP(&rigRTMSummary, "summary", "s", false, "Executive summary view: show requirements matrix and delivery counts without full bead breakdown")
 
 	mayorWorkflowCmd.AddCommand(mayorWorkflowRTMCmd)
 }
@@ -140,7 +143,7 @@ func generateAndOutputRTM(townRoot, rigName string) error {
 	} else if rigRTMMarkdown {
 		fmt.Println(report.Markdown())
 	} else if rigRTMOutput == "" {
-		fmt.Print(report.RenderTerminal())
+		fmt.Print(report.RenderTerminal(rigRTMSummary))
 	}
 
 	if rigRTMAudit && report.Failures > 0 {
