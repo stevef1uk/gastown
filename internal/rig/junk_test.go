@@ -79,6 +79,8 @@ func TestRejectMayorRigRootShellCommand_allowsNpmInSubdir(t *testing.T) {
 		{"cd finally/mayor/rig/finally && npm install", "finally", false},
 		{"cd tasktracker/mayor/rig/taskboard && npm install --no-audit --no-fund && ./node_modules/.bin/playwright --version", "taskboard", false},
 		{"cd taskboard && npm install", "taskboard", false},
+		{"((cd finally/frontend && npm install --ignore-scripts) && (cd finally/frontend && npm run build) && test -f finally/frontend/package.json)", "finally", false},
+		{"(cd frontend && npm install)", ".", false},
 	}
 	for _, tc := range cases {
 		err := RejectMayorRigRootShellCommand(tc.cmd, tc.layoutRoot)

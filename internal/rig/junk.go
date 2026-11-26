@@ -222,11 +222,12 @@ func runsInSubdirectory(lower, layoutRoot string) bool {
 	cleaned = strings.ReplaceAll(cleaned, "||", ";")
 	for _, part := range strings.Split(cleaned, ";") {
 		part = strings.TrimSpace(part)
-		if !strings.HasPrefix(part, "cd ") {
+		part = strings.Trim(part, "() \t")
+		if !strings.HasPrefix(part, "cd ") && !strings.HasPrefix(part, "cd\t") {
 			continue
 		}
-		target := strings.TrimSpace(strings.TrimPrefix(part, "cd "))
-		target = strings.Trim(target, "'\"")
+		target := strings.TrimSpace(strings.TrimPrefix(part, "cd"))
+		target = strings.Trim(target, "'\"() \t")
 		target = filepath.ToSlash(filepath.Clean(target))
 		if target == "" || target == "." {
 			continue
