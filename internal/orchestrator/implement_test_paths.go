@@ -70,6 +70,16 @@ func correlatedTestCandidates(source string, v WorkflowValidation) []string {
 			}
 		}
 	}
+	for _, ext := range []string{".tsx", ".ts", ".jsx", ".js"} {
+		if strings.HasSuffix(source, ext) && !IsTestImplementPath(source) {
+			base := strings.TrimSuffix(filepath.Base(source), ext)
+			for _, name := range []string{base + ".test" + ext, base + ".spec" + ext, base + ".test.ts", base + ".spec.ts", base + ".test.js", base + ".spec.js"} {
+				for _, dir := range []string{filepath.Dir(source), filepath.Join(filepath.Dir(source), "__tests__")} {
+					paths = appendUniquePath(paths, filepath.ToSlash(filepath.Join(dir, name)))
+				}
+			}
+		}
+	}
 	return paths
 }
 
@@ -144,6 +154,57 @@ func CorrelatedTestPathForSource(beadPath string, v WorkflowValidation) string {
 			return formatted[0]
 		}
 		return ""
+	}
+	for _, ext := range []string{".tsx", ".ts", ".jsx", ".js"} {
+		if strings.HasSuffix(rel, ext) {
+			base := strings.TrimSuffix(filepath.Base(rel), ext)
+			testNames := []string{
+				base + ".test" + ext,
+				base + ".spec" + ext,
+			}
+			if ext == ".tsx" {
+				testNames = append(testNames, base+".test.ts", base+".spec.ts")
+			} else if ext == ".jsx" {
+				testNames = append(testNames, base+".test.js", base+".spec.js")
+			}
+
+			for _, req := range v.RequiredFiles {
+				req = filepath.ToSlash(strings.TrimSpace(req))
+				reqBase := filepath.Base(req)
+				for _, tn := range testNames {
+					if reqBase == tn {
+						return req
+					}
+				}
+			}
+
+			dir := filepath.ToSlash(filepath.Dir(rel))
+			candidates := []string{
+				filepath.ToSlash(filepath.Join(dir, testNames[0])),
+			}
+			if dir != "." {
+				candidates = append(candidates, filepath.ToSlash(filepath.Join(dir, "__tests__", testNames[0])))
+			}
+			var formatted []string
+			for _, c := range candidates {
+				if layout != "" && !strings.HasPrefix(c, layout+"/") {
+					c = layout + "/" + c
+				}
+				formatted = append(formatted, c)
+			}
+			for _, c := range formatted {
+				for _, req := range v.RequiredFiles {
+					req = filepath.ToSlash(strings.TrimSpace(req))
+					if req == c {
+						return c
+					}
+				}
+			}
+			if len(formatted) > 0 {
+				return formatted[0]
+			}
+			return ""
+		}
 	}
 	return ""
 }

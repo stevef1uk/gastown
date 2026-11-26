@@ -49,6 +49,18 @@ func TestCorrelatedTestPathForSource_python_prefersRequiredTest(t *testing.T) {
 	}
 }
 
+func TestCorrelatedTestPathForSource_tsx(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:    "finally",
+		RequiredFiles: []string{"finally/frontend/components/ChatAssistant.test.tsx"},
+	}
+	got := CorrelatedTestPathForSource("finally/frontend/components/ChatAssistant.tsx", v)
+	if got != "finally/frontend/components/ChatAssistant.test.tsx" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestGoCompileVerifyCommandForBead_runsPackageTests(t *testing.T) {
 	t.Parallel()
 	v := WorkflowValidation{

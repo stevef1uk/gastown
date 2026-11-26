@@ -528,6 +528,35 @@ func TestTestPlanBeadMappingMismatchesSkipsClosedPlaceholder(t *testing.T) {
 	}
 }
 
+func TestTestPlanBeadMappingMismatchesAcceptsTSXCompanionSourceOwner(t *testing.T) {
+	t.Parallel()
+	v := WorkflowValidation{
+		LayoutRoot:        "finally",
+		BeadTitleContains: "Implement ",
+		ActivePhaseIDField: "application-polish",
+		CompletedPhaseIDsField: []string{"ai-trading-assistant"},
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "ai-trading-assistant", RequiredFiles: []string{"finally/frontend/components/ChatAssistant.tsx", "finally/frontend/components/ChatAssistant.test.tsx"}},
+			{ID: "application-polish", RequiredFiles: []string{"finally/test/application-polish.spec.ts"}},
+		},
+	}
+	blocks := []TestPlanBlock{
+		{
+			ReqID:    "ai-trading-assistant",
+			Phase:    "ai-trading-assistant",
+			TestFile: "finally/frontend/components/ChatAssistant.test.tsx",
+			BeadID:   "te-388",
+		},
+	}
+	titles := map[string]string{
+		"te-388": "Implement finally/frontend/components/ChatAssistant.tsx per architecture",
+	}
+
+	if got := testPlanBeadMappingMismatches(v, blocks, titles); len(got) != 0 {
+		t.Fatalf("expected companion TSX test with source bead to pass, got: %v", got)
+	}
+}
+
 func TestPhaseShipsAutomatedTests(t *testing.T) {
 	cases := []struct {
 		name string
