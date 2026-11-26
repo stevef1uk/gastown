@@ -84,6 +84,16 @@ const (
 	CategoryDocsConfig     = "Docs & Config"
 )
 
+// WorkflowDoc represents a core workflow markdown document (spec, architecture, plan, test plan, etc.).
+type WorkflowDoc struct {
+	Name        string `json:"name"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Icon        string `json:"icon"`
+	Bytes       int64  `json:"bytes"`
+	Path        string `json:"path"`
+}
+
 // RTMReport holds the complete Requirements Traceability Matrix for a rig.
 type RTMReport struct {
 	Rig               string            `json:"rig"`
@@ -92,6 +102,7 @@ type RTMReport struct {
 	Rows              []RTMRow          `json:"rows"`
 	Beads             []RTMBeadRow      `json:"beads,omitempty"`
 	Summary           RTMSummary        `json:"summary"`
+	WorkflowDocs      []WorkflowDoc     `json:"workflow_docs,omitempty"`
 	FileContents      map[string]string `json:"file_contents,omitempty"`
 	FileAbsolutePaths map[string]string `json:"file_absolute_paths,omitempty"`
 	TotalReqs         int               `json:"total_requirements"`
@@ -602,7 +613,89 @@ func GenerateRTM(townRoot, rigName string) (*RTMReport, error) {
 		}
 	}
 
+	// Discover and load core workflow markdown specifications and reports
+	report.WorkflowDocs = discoverWorkflowDocs(rigDir)
+	for _, doc := range report.WorkflowDocs {
+		recordFile(doc.Name)
+	}
+
 	return report, nil
+}
+
+// discoverWorkflowDocs locates core workflow markdown files (SPEC.md, architecture.md, plan.md, etc.)
+func discoverWorkflowDocs(rigDir string) []WorkflowDoc {
+	type docDef struct {
+		name string
+		title string
+		desc  string
+		icon  string
+	}
+
+	knownDocs := []docDef{
+		{"SPEC.md", "System Specification", "Functional requirements, constraints & user stories", "📋"},
+		{"architecture.md", "System Architecture", "Technical design, components & data models", "🏛️"},
+		{"plan.md", "Execution Plan", "Delivery phases, work breakdown & beads", "🗺️"},
+		{"TEST_PLAN.md", "Test Plan & Strategy", "Verification matrix, test scenarios & quality gates", "🧪"},
+		{"test-report.md", "Test Execution Report", "Automated test execution results & quality audit", "📊"},
+		{"TRACEABILITY.md", "Traceability Matrix", "Requirements to implementation mapping", "🔗"},
+	}
+
+	var docs []WorkflowDoc
+	seen := make(map[string]bool)
+
+	for _, def := range knownDocs {
+		p := filepath.Join(rigDir, def.name)
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			docs = append(docs, WorkflowDoc{
+				Name:        def.name,
+				Title:       def.title,
+				Description: def.desc,
+				Icon:        def.icon,
+				Bytes:       fi.Size(),
+				Path:        p,
+			})
+			seen[strings.ToLower(def.name)] = true
+		}
+	}
+
+	// Discover any other top-level markdown documents in rigDir
+	entries, err := os.ReadDir(rigDir)
+	if err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			lower := strings.ToLower(name)
+			if !strings.HasSuffix(lower, ".md") || seen[lower] || strings.HasPrefix(name, ".") {
+				continue
+			}
+			fi, err := e.Info()
+			if err != nil {
+				continue
+			}
+			title := strings.TrimSuffix(name, filepath.Ext(name))
+			title = strings.ReplaceAll(title, "-", " ")
+			title = strings.ReplaceAll(title, "_", " ")
+			title = strings.Title(title)
+			icon := "📄"
+			if strings.EqualFold(name, "README.md") {
+				icon = "📖"
+				title = "README Overview"
+			}
+			docs = append(docs, WorkflowDoc{
+				Name:        name,
+				Title:       title,
+				Description: fmt.Sprintf("Workflow document (%s)", name),
+				Icon:        icon,
+				Bytes:       fi.Size(),
+				Path:        filepath.Join(rigDir, name),
+			})
+			seen[lower] = true
+		}
+	}
+
+	return docs
 }
 
 func tryReadFileContent(rigDir, targetPath string) (string, string, bool) {

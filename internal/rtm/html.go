@@ -235,6 +235,226 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 }
 .file-icon { font-size: 0.85rem; opacity: 0.8; }
 
+/* Document Cards Grid */
+.docs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  padding: 1.25rem;
+}
+.doc-card {
+  background: #0d1527;
+  border: 1px solid var(--card-border);
+  border-radius: 0.65rem;
+  padding: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  text-decoration: none;
+}
+.doc-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(56, 189, 248, 0.15);
+  background: #111d35;
+}
+.doc-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+.doc-icon {
+  font-size: 1.65rem;
+  line-height: 1;
+}
+.doc-size-badge {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid var(--card-border);
+}
+.doc-filename {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 0.25rem;
+}
+.doc-heading {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 0.35rem;
+}
+.doc-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  flex: 1;
+  margin-bottom: 0.75rem;
+}
+.doc-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.doc-read-cta {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+.doc-card:hover .doc-read-cta {
+  text-decoration: underline;
+}
+
+/* Viewer Tabs */
+.viewer-tabs {
+  display: flex;
+  gap: 0.35rem;
+}
+.viewer-tab {
+  background: transparent;
+  border: 1px solid var(--card-border);
+  color: var(--text-muted);
+  padding: 0.35rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.viewer-tab:hover {
+  color: #fff;
+  border-color: var(--text-muted);
+}
+.viewer-tab.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Markdown Formatted Body Styling */
+.markdown-container {
+  padding: 2rem;
+  max-height: 650px;
+  overflow-y: auto;
+  background: #080d1a;
+  color: #e2e8f0;
+  line-height: 1.65;
+  font-size: 0.925rem;
+}
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+  color: #fff;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.3;
+}
+.markdown-body h1 { font-size: 1.65rem; border-bottom: 1px solid var(--card-border); padding-bottom: 0.5rem; }
+.markdown-body h2 { font-size: 1.35rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 0.4rem; }
+.markdown-body h3 { font-size: 1.15rem; color: #7dd3fc; }
+.markdown-body h4 { font-size: 1.025rem; color: #a78bfa; }
+.markdown-body p { margin-bottom: 1rem; }
+.markdown-body ul, .markdown-body ol { margin-bottom: 1rem; padding-left: 1.5rem; }
+.markdown-body li { margin-bottom: 0.35rem; }
+.markdown-body hr { border: 0; height: 1px; background: var(--card-border); margin: 1.75rem 0; }
+.markdown-body blockquote {
+  border-left: 4px solid var(--accent);
+  padding: 0.6rem 1rem;
+  margin: 1rem 0;
+  background: rgba(56, 189, 248, 0.06);
+  border-radius: 0 0.375rem 0.375rem 0;
+  color: #cbd5e1;
+}
+.markdown-body blockquote.alert-note {
+  border-left-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+}
+.markdown-body blockquote.alert-tip {
+  border-left-color: #10b981;
+  background: rgba(16, 185, 129, 0.08);
+}
+.markdown-body blockquote.alert-important {
+  border-left-color: #a78bfa;
+  background: rgba(167, 139, 250, 0.08);
+}
+.markdown-body blockquote.alert-warning {
+  border-left-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+}
+.markdown-body blockquote.alert-caution {
+  border-left-color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+.markdown-body code {
+  font-family: var(--mono);
+  background: #1e293b;
+  color: #f1f5f9;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.85em;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.code-fence-wrapper {
+  margin: 1.25rem 0;
+  border: 1px solid #1e293b;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: #050814;
+}
+.code-fence-header {
+  background: #0f172a;
+  padding: 0.35rem 0.85rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid #1e293b;
+  display: flex;
+  justify-content: space-between;
+}
+.code-fence-wrapper pre {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  padding: 0.85rem 1rem;
+}
+.markdown-body table {
+  width: 100%%;
+  border-collapse: collapse;
+  margin: 1.25rem 0;
+  font-size: 0.85rem;
+}
+.markdown-body th {
+  background: #0f172a;
+  color: #f8fafc;
+  font-weight: 600;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--card-border);
+  text-align: left;
+}
+.markdown-body td {
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--card-border);
+  vertical-align: top;
+}
+.markdown-body tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
+}
+.markdown-body tr:hover td {
+  background: rgba(255, 255, 255, 0.04);
+}
+.markdown-body strong { color: #fff; font-weight: 600; }
+.markdown-body a { color: var(--accent); text-decoration: underline; }
+.markdown-body input[type="checkbox"] { margin-right: 0.4rem; vertical-align: middle; }
+
 /* Viewing Panel Below */
 .viewer-section {
   border: 1px solid #334155;
@@ -383,6 +603,51 @@ footer {
 		r.Summary.Infrastructure,
 		r.Summary.Build+r.Summary.DocsConfig,
 	))
+
+	// Section: Workflow Specifications & Core Artifacts
+	if len(r.WorkflowDocs) > 0 {
+		sb.WriteString(`
+<div class="section" style="margin-bottom: 2rem;">
+  <div class="section-header">
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <span style="font-size: 1.25rem;">📚</span>
+      <div class="section-title">Workflow Specifications & Core Artifacts</div>
+    </div>
+    <div style="font-size: 0.8rem; color: var(--text-muted);">
+      Click any document to inspect formatted markdown specifications, architectures and plans below
+    </div>
+  </div>
+  <div class="docs-grid">
+`)
+		for _, doc := range r.WorkflowDocs {
+			sizeStr := formatFileSize(doc.Bytes)
+			cleanDocPath := CleanArtifactPath(doc.Name, r.Rig)
+			sb.WriteString(fmt.Sprintf(`
+    <div class="doc-card" onclick="openFileViewer('%s')">
+      <div class="doc-card-header">
+        <div class="doc-icon">%s</div>
+        <div class="doc-size-badge">%s</div>
+      </div>
+      <div class="doc-filename">%s</div>
+      <div class="doc-heading">%s</div>
+      <div class="doc-desc">%s</div>
+      <div class="doc-footer">
+        <span class="doc-read-cta">Read Document →</span>
+      </div>
+    </div>`,
+				html.EscapeString(cleanDocPath),
+				doc.Icon,
+				html.EscapeString(sizeStr),
+				html.EscapeString(cleanDocPath),
+				html.EscapeString(doc.Title),
+				html.EscapeString(doc.Description),
+			))
+		}
+		sb.WriteString(`
+  </div>
+</div>
+`)
+	}
 
 	// Table 1: Requirements Verification Matrix
 	sb.WriteString(`
@@ -574,26 +839,33 @@ footer {
 </div>
 `)
 
-	// Section 3: Interactive Artifact Code Viewer Panel
+	// Section 3: Interactive Artifact Code & Document Viewer Panel
 	sb.WriteString(`
 <div id="fileViewerSection" class="section viewer-section">
   <div class="section-header viewer-header">
     <div class="viewer-meta">
-      <span class="file-icon" style="font-size: 1.25rem;">📄</span>
+      <span id="viewerFileIcon" class="file-icon" style="font-size: 1.25rem;">📄</span>
       <span id="viewerFileName" class="viewer-filename">Select a file above to view contents</span>
       <span id="viewerBadge" class="badge" style="display:none;"></span>
       <span id="viewerLines" class="badge badge-accent" style="display:none;"></span>
+
+      <!-- Rendered vs Raw Tabs for Markdown / Specs -->
+      <div id="viewerTabs" class="viewer-tabs" style="display:none; margin-left: 0.5rem;">
+        <button id="tabRenderedBtn" class="viewer-tab active" onclick="switchViewerMode('rendered')">👁️ Formatted View</button>
+        <button id="tabRawBtn" class="viewer-tab" onclick="switchViewerMode('raw')">📄 Raw Source</button>
+      </div>
     </div>
     <div class="viewer-actions">
       <a id="viewerRawLink" href="#" class="pill-btn" target="_blank" style="display:none;">Open Raw File ↗</a>
-      <button id="copyCodeBtn" class="pill-btn" onclick="copyViewerCode()" style="display:none;">Copy Code</button>
+      <button id="copyCodeBtn" class="pill-btn" onclick="copyViewerCode()" style="display:none;">Copy Content</button>
       <button id="closeViewerBtn" class="pill-btn" onclick="closeViewer()" style="display:none;">✕ Close</button>
     </div>
   </div>
   <div id="viewerEmptyState" class="viewer-empty">
     <div style="font-size: 1.75rem; margin-bottom: 0.5rem; opacity: 0.6;">🔍</div>
-    <div>Click any test file or target artifact above to inspect its implementation on disk.</div>
+    <div>Click any specification document or verification test above to inspect its implementation on disk.</div>
   </div>
+  <div id="viewerRendered" class="markdown-container markdown-body" style="display: none;"></div>
   <div id="viewerContent" class="code-container" style="display: none;">
     <div id="lineNumbers" class="line-numbers"></div>
     <pre><code id="viewerCode" class="code-body"></code></pre>
@@ -611,6 +883,9 @@ const fileData = ` + string(fileDataJSON) + `;
 const filePaths = ` + string(filePathsJSON) + `;
 
 let currentCategory = 'all';
+let currentViewerFile = '';
+let currentViewerContent = '';
+let currentViewerMode = 'rendered';
 
 function setCategoryFilter(cat, btn) {
   currentCategory = cat;
@@ -646,12 +921,269 @@ function filterBeads() {
   });
 }
 
+function switchViewerMode(mode) {
+  currentViewerMode = mode;
+  const isMd = currentViewerFile.toLowerCase().endsWith('.md');
+  const renderedEl = document.getElementById('viewerRendered');
+  const contentEl = document.getElementById('viewerContent');
+  const tabRenderedBtn = document.getElementById('tabRenderedBtn');
+  const tabRawBtn = document.getElementById('tabRawBtn');
+
+  if (mode === 'rendered' && isMd) {
+    if (tabRenderedBtn) tabRenderedBtn.classList.add('active');
+    if (tabRawBtn) tabRawBtn.classList.remove('active');
+    renderedEl.innerHTML = renderMarkdown(currentViewerContent);
+    renderedEl.style.display = 'block';
+    contentEl.style.display = 'none';
+  } else {
+    if (tabRenderedBtn) tabRenderedBtn.classList.remove('active');
+    if (tabRawBtn) tabRawBtn.classList.add('active');
+    renderedEl.style.display = 'none';
+    contentEl.style.display = 'flex';
+  }
+}
+
+function renderMarkdown(md) {
+  if (!md) return '';
+
+  // 1. Extract fenced code blocks
+  const codeBlocks = [];
+  const bt3 = String.fromCharCode(96, 96, 96);
+  const codeBlockRegex = new RegExp(bt3 + '([a-zA-Z0-9_\\\\-\\\\+]*)\\\\n([\\\\s\\\\S]*?)' + bt3, 'g');
+  let text = md.replace(codeBlockRegex, (match, lang, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push({ lang: lang || 'text', code: code });
+    return '___CODE_BLOCK_' + idx + '___';
+  });
+
+  // 2. Extract inline code
+  const inlineCodes = [];
+  const bt1 = String.fromCharCode(96);
+  const inlineCodeRegex = new RegExp(bt1 + '([^' + bt1 + '\\\\n]+)' + bt1, 'g');
+  text = text.replace(inlineCodeRegex, (match, code) => {
+    const idx = inlineCodes.length;
+    inlineCodes.push(code);
+    return '___INLINE_CODE_' + idx + '___';
+  });
+
+  // 3. Helper to escape HTML safely
+  function escapeHtml(str) {
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function parseInline(str) {
+    let s = escapeHtml(str);
+    s = s.replace(/\\*\\*([^\\*]+)\\*\\*/g, '<strong>$1</strong>');
+    s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    s = s.replace(/\\*([^\\*]+)\\*/g, '<em>$1</em>');
+    s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
+    s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+    s = s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    return s;
+  }
+
+  // 4. Parse line by line
+  const rawLines = text.split('\\n');
+  const out = [];
+  let inList = false;
+  let listType = '';
+  let inBlockquote = false;
+  let blockquoteType = '';
+  let blockquoteLines = [];
+  let inTable = false;
+  let tableHeader = [];
+  let tableRows = [];
+
+  function closeList() {
+    if (inList) {
+      out.push(listType === 'ul' ? '</ul>' : '</ol>');
+      inList = false;
+      listType = '';
+    }
+  }
+
+  function closeBlockquote() {
+    if (inBlockquote) {
+      const cls = blockquoteType ? ' ' + blockquoteType : '';
+      out.push('<blockquote class="' + cls + '">' + blockquoteLines.join('<br>') + '</blockquote>');
+      inBlockquote = false;
+      blockquoteType = '';
+      blockquoteLines = [];
+    }
+  }
+
+  function closeTable() {
+    if (inTable) {
+      let tblHtml = '<table><thead><tr>';
+      tableHeader.forEach(h => {
+        tblHtml += '<th>' + parseInline(h) + '</th>';
+      });
+      tblHtml += '</tr></thead><tbody>';
+      tableRows.forEach(row => {
+        tblHtml += '<tr>';
+        row.forEach(cell => {
+          tblHtml += '<td>' + parseInline(cell) + '</td>';
+        });
+        tblHtml += '</tr>';
+      });
+      tblHtml += '</tbody></table>';
+      out.push(tblHtml);
+      inTable = false;
+      tableHeader = [];
+      tableRows = [];
+    }
+  }
+
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    const trimmed = line.trim();
+
+    // Table rows
+    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+      closeList();
+      closeBlockquote();
+
+      const cells = trimmed.slice(1, -1).split('|').map(c => c.trim());
+      const isSep = cells.every(c => /^:?-+:?$/.test(c));
+
+      if (isSep) {
+        continue;
+      }
+
+      if (!inTable) {
+        if (i + 1 < rawLines.length && rawLines[i + 1].trim().startsWith('|')) {
+          const nextCells = rawLines[i + 1].trim().slice(1, -1).split('|').map(c => c.trim());
+          if (nextCells.every(c => /^:?-+:?$/.test(c))) {
+            inTable = true;
+            tableHeader = cells;
+            continue;
+          }
+        }
+      }
+
+      if (inTable) {
+        tableRows.push(cells);
+        continue;
+      }
+    } else {
+      closeTable();
+    }
+
+    if (!trimmed) {
+      closeList();
+      closeBlockquote();
+      continue;
+    }
+
+    // Horizontal rule
+    if (/^(\\*{3,}|-{3,}|_{3,})$/.test(trimmed)) {
+      closeList();
+      closeBlockquote();
+      out.push('<hr>');
+      continue;
+    }
+
+    // Headers
+    const hMatch = trimmed.match(/^(#{1,6})\\s+(.*)$/);
+    if (hMatch) {
+      closeList();
+      closeBlockquote();
+      const level = hMatch[1].length;
+      out.push('<h' + level + '>' + parseInline(hMatch[2]) + '</h' + level + '>');
+      continue;
+    }
+
+    // Blockquotes & Alerts
+    if (trimmed.startsWith('>')) {
+      closeList();
+      let bqContent = trimmed.replace(/^>\\s?/, '');
+      const alertMatch = bqContent.match(/^\\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\\]/i);
+      if (alertMatch) {
+        closeBlockquote();
+        inBlockquote = true;
+        const type = alertMatch[1].toLowerCase();
+        blockquoteType = 'alert-' + type;
+        const alertIcons = { note: 'ℹ️ NOTE', tip: '💡 TIP', important: '❗ IMPORTANT', warning: '⚠️ WARNING', caution: '🛑 CAUTION' };
+        blockquoteLines.push('<strong>' + (alertIcons[type] || type.toUpperCase()) + '</strong>');
+        continue;
+      }
+      if (!inBlockquote) {
+        inBlockquote = true;
+        blockquoteType = '';
+      }
+      blockquoteLines.push(parseInline(bqContent));
+      continue;
+    } else {
+      closeBlockquote();
+    }
+
+    // List items
+    const ulMatch = trimmed.match(/^[-*+]\\s+(.*)$/);
+    const olMatch = trimmed.match(/^(\\d+)\\.\\s+(.*)$/);
+    if (ulMatch || olMatch) {
+      const isUl = !!ulMatch;
+      const content = isUl ? ulMatch[1] : olMatch[2];
+      const targetType = isUl ? 'ul' : 'ol';
+
+      if (!inList || listType !== targetType) {
+        closeList();
+        inList = true;
+        listType = targetType;
+        out.push(isUl ? '<ul>' : '<ol>');
+      }
+
+      const taskMatch = content.match(/^\\[([ xX])\\]\\s+(.*)$/);
+      if (taskMatch) {
+        const checked = taskMatch[1].toLowerCase() === 'x';
+        out.push('<li><input type="checkbox" ' + (checked ? 'checked ' : '') + 'disabled> ' + parseInline(taskMatch[2]) + '</li>');
+      } else {
+        out.push('<li>' + parseInline(content) + '</li>');
+      }
+      continue;
+    } else {
+      closeList();
+    }
+
+    // Paragraph
+    out.push('<p>' + parseInline(trimmed) + '</p>');
+  }
+
+  closeList();
+  closeBlockquote();
+  closeTable();
+
+  let htmlResult = out.join('\\n');
+
+  // Restore inline codes
+  inlineCodes.forEach((code, idx) => {
+    htmlResult = htmlResult.replace('___INLINE_CODE_' + idx + '___', '<code>' + escapeHtml(code) + '</code>');
+  });
+
+  // Restore code blocks
+  codeBlocks.forEach((item, idx) => {
+    const langDisplay = item.lang.toUpperCase() || 'CODE';
+    const blockHtml = '<div class="code-fence-wrapper"><div class="code-fence-header"><span>' + escapeHtml(langDisplay) + '</span></div><pre><code class="code-body">' + escapeHtml(item.code.trim()) + '</code></pre></div>';
+    htmlResult = htmlResult.replace('___CODE_BLOCK_' + idx + '___', blockHtml);
+  });
+
+  return htmlResult;
+}
+
 function openFileViewer(path) {
-  const content = fileData[path] || fileData[path.replace(/^\/+/, '')] || '';
-  const absPath = filePaths[path] || filePaths[path.replace(/^\/+/, '')] || '';
+  const content = fileData[path] || fileData[path.replace(/^\\/+/, '')] || '';
+  const absPath = filePaths[path] || filePaths[path.replace(/^\\/+/, '')] || '';
+
+  currentViewerFile = path;
+  currentViewerContent = content;
 
   const viewerSection = document.getElementById('fileViewerSection');
   const fileNameEl = document.getElementById('viewerFileName');
+  const iconEl = document.getElementById('viewerFileIcon');
   const badgeEl = document.getElementById('viewerBadge');
   const linesEl = document.getElementById('viewerLines');
   const rawLinkEl = document.getElementById('viewerRawLink');
@@ -659,6 +1191,8 @@ function openFileViewer(path) {
   const closeBtn = document.getElementById('closeViewerBtn');
   const emptyState = document.getElementById('viewerEmptyState');
   const contentEl = document.getElementById('viewerContent');
+  const renderedEl = document.getElementById('viewerRendered');
+  const tabsEl = document.getElementById('viewerTabs');
   const codeEl = document.getElementById('viewerCode');
   const lineNumbersEl = document.getElementById('lineNumbers');
 
@@ -668,6 +1202,8 @@ function openFileViewer(path) {
     emptyState.style.display = 'block';
     emptyState.innerHTML = '<div style="font-size:1.5rem; margin-bottom:0.5rem; color:var(--warning);">⚠️</div><div>Artifact file not found on disk: <code>' + path + '</code></div>';
     contentEl.style.display = 'none';
+    renderedEl.style.display = 'none';
+    tabsEl.style.display = 'none';
     badgeEl.style.display = 'none';
     linesEl.style.display = 'none';
     rawLinkEl.style.display = 'none';
@@ -678,26 +1214,38 @@ function openFileViewer(path) {
   }
 
   emptyState.style.display = 'none';
-  contentEl.style.display = 'flex';
   badgeEl.style.display = 'inline-flex';
   linesEl.style.display = 'inline-flex';
   copyBtn.style.display = 'inline-flex';
   closeBtn.style.display = 'inline-flex';
 
-  // Format badge
   const ext = path.split('.').pop().toLowerCase();
+  const isMd = ext === 'md';
   badgeEl.textContent = ext.toUpperCase() + ' File';
 
-  // Code body
-  codeEl.textContent = content;
+  if (isMd) {
+    iconEl.textContent = '📚';
+    tabsEl.style.display = 'flex';
+  } else {
+    iconEl.textContent = '📄';
+    tabsEl.style.display = 'none';
+  }
 
-  // Line numbers
-  const lines = content.split('\n');
+  // Populate code body and lines for raw source
+  codeEl.textContent = content;
+  const lines = content.split('\\n');
+  linesEl.textContent = lines.length + ' lines';
   let nums = '';
   for (let i = 1; i <= lines.length; i++) {
-    nums += i + '\n';
+    nums += i + '\\n';
   }
   lineNumbersEl.textContent = nums;
+
+  if (isMd) {
+    switchViewerMode('rendered');
+  } else {
+    switchViewerMode('raw');
+  }
 
   if (absPath) {
     rawLinkEl.style.display = 'inline-flex';
@@ -711,8 +1259,10 @@ function openFileViewer(path) {
 
 function closeViewer() {
   document.getElementById('viewerContent').style.display = 'none';
+  document.getElementById('viewerRendered').style.display = 'none';
+  document.getElementById('viewerTabs').style.display = 'none';
   document.getElementById('viewerEmptyState').style.display = 'block';
-  document.getElementById('viewerEmptyState').innerHTML = '<div style="font-size: 1.75rem; margin-bottom: 0.5rem; opacity: 0.6;">🔍</div><div>Click any test file or target artifact above to inspect its implementation on disk.</div>';
+  document.getElementById('viewerEmptyState').innerHTML = '<div style="font-size: 1.75rem; margin-bottom: 0.5rem; opacity: 0.6;">🔍</div><div>Click any specification document or verification test above to inspect its implementation on disk.</div>';
   document.getElementById('viewerFileName').textContent = 'Select a file above to view contents';
   document.getElementById('viewerBadge').style.display = 'none';
   document.getElementById('viewerLines').style.display = 'none';
@@ -722,8 +1272,7 @@ function closeViewer() {
 }
 
 function copyViewerCode() {
-  const code = document.getElementById('viewerCode').textContent;
-  navigator.clipboard.writeText(code).then(() => {
+  navigator.clipboard.writeText(currentViewerContent).then(() => {
     const btn = document.getElementById('copyCodeBtn');
     const old = btn.textContent;
     btn.textContent = '✓ Copied!';
@@ -736,4 +1285,18 @@ function copyViewerCode() {
 `)
 
 	return sb.String()
+}
+
+// formatFileSize formats byte sizes into human readable strings.
+func formatFileSize(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
