@@ -120,6 +120,21 @@ func gasTownMayorRigIgnorePatterns() []string {
 		"!**/server/",
 		"block:",
 		"node_modules/",
+		"**/node_modules/",
+		".next/",
+		"**/.next/",
+		"out/",
+		"**/out/",
+		"dist/",
+		"**/dist/",
+		"build/",
+		"**/build/",
+		".cache/",
+		"**/.cache/",
+		".turbo/",
+		"**/.turbo/",
+		"*.pack",
+		"**/*.pack",
 		"env/",
 		".venv/",
 		"venv/",
@@ -142,6 +157,16 @@ func mayorRigUntrackPaths() []string {
 		".beads",
 		"codeindex.json",
 		"node_modules",
+		"**/node_modules",
+		".next",
+		"**/.next",
+		"out",
+		"**/out",
+		"dist",
+		"**/dist",
+		"build",
+		"**/build",
+		"**/*.pack",
 		"env",
 		".venv",
 		"venv",
@@ -296,6 +321,11 @@ func appendMissingIgnorePatterns(worktreePath, ignoreFilePath, header string, re
 
 func untrackPathsIfTracked(worktreePath string, paths []string) {
 	for _, path := range paths {
+		if strings.Contains(path, "*") {
+			rm := exec.Command("git", "-C", worktreePath, "rm", "-r", "--cached", "--quiet", "--ignore-unmatch", "--", path)
+			_ = rm.Run()
+			continue
+		}
 		check := exec.Command("git", "-C", worktreePath, "ls-files", "--error-unmatch", path)
 		if err := check.Run(); err != nil {
 			continue

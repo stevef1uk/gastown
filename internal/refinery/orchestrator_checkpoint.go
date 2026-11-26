@@ -9,6 +9,7 @@ import (
 
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/git"
+	"github.com/steveyegge/gastown/internal/rig"
 )
 
 // hasBinaryFiles returns true if there are binary (non-text) files among
@@ -98,6 +99,9 @@ func CommitMayorRigOrchestratorCheckpoint(townRoot, rigName, workflowID, templat
 	if !g.IsRepo() {
 		return nil
 	}
+
+	// Ensure mayor/rig ignore hygiene and untrack build/cache artifacts before staging.
+	_ = rig.EnsureMayorRigGitHygiene(mayorRig)
 
 	// Always stage new files first — bd auto-export may have failed for
 	// files created by the polecat. git add -A is idempotent and safe.
