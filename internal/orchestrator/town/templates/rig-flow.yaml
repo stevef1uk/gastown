@@ -252,8 +252,6 @@ states:
       cmd_rewrites: [rig_placeholders, spec_md_case, spec_md_after_cd, bd_list_limit, unwrap_bash_lc]
       env:
         beads_dir: true
-      cmd_before_outcome_nudge: |
-        Before routing, inspect the retained reviewer finding and the authoritative artifact it cites. Use read-only commands only; then choose the responsible owner from the allowed outcomes.
       retry_hint: |
         Read the prior review findings and compare the rejected artifact with its authoritative source before selecting one repair owner.
     transitions:

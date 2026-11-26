@@ -140,7 +140,7 @@ func TestRigFlowCmdBeforeOutcomeNudge(t *testing.T) {
 
 	// States that act (write/verify) before reporting must NOT reject a
 	// first-turn outcome — otherwise a valid JSON-only completion stalls.
-	for _, state := range []string{"implementation", "planning", "plan_review", "test_plan", "test_review", "design", "kickoff"} {
+	for _, state := range []string{"implementation", "planning", "plan_review", "test_plan", "test_review", "design", "kickoff", "review_recovery"} {
 		h, err := orchestrator.RigFlowStateHooks(state)
 		if err != nil {
 			t.Fatalf("RigFlowStateHooks(%q): %v", state, err)
