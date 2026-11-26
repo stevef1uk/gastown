@@ -949,7 +949,7 @@ function renderMarkdown(md) {
   // 1. Extract fenced code blocks
   const codeBlocks = [];
   const bt3 = String.fromCharCode(96, 96, 96);
-  const codeBlockRegex = new RegExp(bt3 + '([a-zA-Z0-9_\\\\-\\\\+]*)\\\\n([\\\\s\\\\S]*?)' + bt3, 'g');
+  const codeBlockRegex = new RegExp(bt3 + '([a-zA-Z0-9_\\-\\+]*)\\n([\\s\\S]*?)' + bt3, 'g');
   let text = md.replace(codeBlockRegex, (match, lang, code) => {
     const idx = codeBlocks.length;
     codeBlocks.push({ lang: lang || 'text', code: code });
@@ -959,7 +959,7 @@ function renderMarkdown(md) {
   // 2. Extract inline code
   const inlineCodes = [];
   const bt1 = String.fromCharCode(96);
-  const inlineCodeRegex = new RegExp(bt1 + '([^' + bt1 + '\\\\n]+)' + bt1, 'g');
+  const inlineCodeRegex = new RegExp(bt1 + '([^' + bt1 + '\\n]+)' + bt1, 'g');
   text = text.replace(inlineCodeRegex, (match, code) => {
     const idx = inlineCodes.length;
     inlineCodes.push(code);
@@ -969,26 +969,26 @@ function renderMarkdown(md) {
   // 3. Helper to escape HTML safely
   function escapeHtml(str) {
     return str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   function parseInline(str) {
     let s = escapeHtml(str);
-    s = s.replace(/\\*\\*([^\\*]+)\\*\\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-    s = s.replace(/\\*([^\\*]+)\\*/g, '<em>$1</em>');
+    s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
     s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
     s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-    s = s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
     return s;
   }
 
   // 4. Parse line by line
-  const rawLines = text.split('\\n');
+  const rawLines = text.split('\n');
   const out = [];
   let inList = false;
   let listType = '';
@@ -1081,7 +1081,7 @@ function renderMarkdown(md) {
     }
 
     // Horizontal rule
-    if (/^(\\*{3,}|-{3,}|_{3,})$/.test(trimmed)) {
+    if (/^(\*{3,}|-{3,}|_{3,})$/.test(trimmed)) {
       closeList();
       closeBlockquote();
       out.push('<hr>');
@@ -1089,7 +1089,7 @@ function renderMarkdown(md) {
     }
 
     // Headers
-    const hMatch = trimmed.match(/^(#{1,6})\\s+(.*)$/);
+    const hMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
     if (hMatch) {
       closeList();
       closeBlockquote();
@@ -1101,8 +1101,8 @@ function renderMarkdown(md) {
     // Blockquotes & Alerts
     if (trimmed.startsWith('>')) {
       closeList();
-      let bqContent = trimmed.replace(/^>\\s?/, '');
-      const alertMatch = bqContent.match(/^\\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\\]/i);
+      let bqContent = trimmed.replace(/^>\s?/, '');
+      const alertMatch = bqContent.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i);
       if (alertMatch) {
         closeBlockquote();
         inBlockquote = true;
@@ -1123,8 +1123,8 @@ function renderMarkdown(md) {
     }
 
     // List items
-    const ulMatch = trimmed.match(/^[-*+]\\s+(.*)$/);
-    const olMatch = trimmed.match(/^(\\d+)\\.\\s+(.*)$/);
+    const ulMatch = trimmed.match(/^[-*+]\s+(.*)$/);
+    const olMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
     if (ulMatch || olMatch) {
       const isUl = !!ulMatch;
       const content = isUl ? ulMatch[1] : olMatch[2];
@@ -1137,7 +1137,7 @@ function renderMarkdown(md) {
         out.push(isUl ? '<ul>' : '<ol>');
       }
 
-      const taskMatch = content.match(/^\\[([ xX])\\]\\s+(.*)$/);
+      const taskMatch = content.match(/^\[([ xX])\]\s+(.*)$/);
       if (taskMatch) {
         const checked = taskMatch[1].toLowerCase() === 'x';
         out.push('<li><input type="checkbox" ' + (checked ? 'checked ' : '') + 'disabled> ' + parseInline(taskMatch[2]) + '</li>');
@@ -1157,7 +1157,7 @@ function renderMarkdown(md) {
   closeBlockquote();
   closeTable();
 
-  let htmlResult = out.join('\\n');
+  let htmlResult = out.join('\n');
 
   // Restore inline codes
   inlineCodes.forEach((code, idx) => {
@@ -1175,8 +1175,8 @@ function renderMarkdown(md) {
 }
 
 function openFileViewer(path) {
-  const content = fileData[path] || fileData[path.replace(/^\\/+/, '')] || '';
-  const absPath = filePaths[path] || filePaths[path.replace(/^\\/+/, '')] || '';
+  const content = fileData[path] || fileData[path.replace(/^\/+/, '')] || '';
+  const absPath = filePaths[path] || filePaths[path.replace(/^\/+/, '')] || '';
 
   currentViewerFile = path;
   currentViewerContent = content;
@@ -1233,11 +1233,11 @@ function openFileViewer(path) {
 
   // Populate code body and lines for raw source
   codeEl.textContent = content;
-  const lines = content.split('\\n');
+  const lines = content.split('\n');
   linesEl.textContent = lines.length + ' lines';
   let nums = '';
   for (let i = 1; i <= lines.length; i++) {
-    nums += i + '\\n';
+    nums += i + '\n';
   }
   lineNumbersEl.textContent = nums;
 
