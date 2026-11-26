@@ -946,24 +946,24 @@ function switchViewerMode(mode) {
 function renderMarkdown(md) {
   if (!md) return '';
 
-  // 1. Extract fenced code blocks
+  // 1. Extract fenced code blocks (no underscores in placeholders to prevent markdown regex collision)
   const codeBlocks = [];
   const bt3 = String.fromCharCode(96, 96, 96);
-  const codeBlockRegex = new RegExp(bt3 + '([a-zA-Z0-9_\\-\\+]*)\\n([\\s\\S]*?)' + bt3, 'g');
+  const codeBlockRegex = new RegExp(bt3 + '([a-zA-Z0-9_\\-\\+]*)[ \\t]*\\r?\\n([\\s\\S]*?)' + bt3, 'g');
   let text = md.replace(codeBlockRegex, (match, lang, code) => {
     const idx = codeBlocks.length;
     codeBlocks.push({ lang: lang || 'text', code: code });
-    return '___CODE_BLOCK_' + idx + '___';
+    return '\n\n@@@CODEBLOCK' + idx + '@@@\n\n';
   });
 
-  // 2. Extract inline code
+  // 2. Extract inline code (no underscores in placeholders)
   const inlineCodes = [];
   const bt1 = String.fromCharCode(96);
-  const inlineCodeRegex = new RegExp(bt1 + '([^' + bt1 + '\\n]+)' + bt1, 'g');
+  const inlineCodeRegex = new RegExp(bt1 + '([^' + bt1 + '\\r\\n]+)' + bt1, 'g');
   text = text.replace(inlineCodeRegex, (match, code) => {
     const idx = inlineCodes.length;
     inlineCodes.push(code);
-    return '___INLINE_CODE_' + idx + '___';
+    return '@@@INLINECODE' + idx + '@@@';
   });
 
   // 3. Helper to escape HTML safely
@@ -988,7 +988,7 @@ function renderMarkdown(md) {
   }
 
   // 4. Parse line by line
-  const rawLines = text.split('\n');
+  const rawLines = text.split(/\r?\n/);
   const out = [];
   let inList = false;
   let listType = '';
@@ -1042,6 +1042,15 @@ function renderMarkdown(md) {
   for (let i = 0; i < rawLines.length; i++) {
     const line = rawLines[i];
     const trimmed = line.trim();
+
+    // Standalone code block placeholder
+    if (/^@@@CODEBLOCK\d+@@@$/.test(trimmed)) {
+      closeList();
+      closeBlockquote();
+      closeTable();
+      out.push(trimmed);
+      continue;
+    }
 
     // Table rows
     if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
@@ -1161,14 +1170,16 @@ function renderMarkdown(md) {
 
   // Restore inline codes
   inlineCodes.forEach((code, idx) => {
-    htmlResult = htmlResult.replace('___INLINE_CODE_' + idx + '___', '<code>' + escapeHtml(code) + '</code>');
+    const token = '@@@INLINECODE' + idx + '@@@';
+    htmlResult = htmlResult.split(token).join('<code>' + escapeHtml(code) + '</code>');
   });
 
   // Restore code blocks
   codeBlocks.forEach((item, idx) => {
+    const token = '@@@CODEBLOCK' + idx + '@@@';
     const langDisplay = item.lang.toUpperCase() || 'CODE';
     const blockHtml = '<div class="code-fence-wrapper"><div class="code-fence-header"><span>' + escapeHtml(langDisplay) + '</span></div><pre><code class="code-body">' + escapeHtml(item.code.trim()) + '</code></pre></div>';
-    htmlResult = htmlResult.replace('___CODE_BLOCK_' + idx + '___', blockHtml);
+    htmlResult = htmlResult.split(token).join(blockHtml);
   });
 
   return htmlResult;
