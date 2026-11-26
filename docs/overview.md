@@ -219,3 +219,10 @@ capability-based routing.
 3. **Working in wrong directory**: Gas Town uses cwd for identity detection. Stay in your home directory.
 4. **Waiting for confirmation when work is hooked**: The hook IS your assignment. Execute immediately.
 5. **Creating worktrees when dispatch is better**: If work should be owned by the target rig, dispatch it instead.
+
+## Related Architecture Documentation
+
+- [Multi-Agent Workflow & Delivery Lifecycle](concepts/workflow-overview.md): End-to-end multi-agent delivery, tiers, and customization layers.
+- [Platform Re-Architecture & Infrastructure Extensions](concepts/platform-rearchitecture.md): The transition from TMUX to NATS, `gt-agent` LLM harness, `gt-orchestrator`, and Freeride mTLS reverse proxy.
+- [System Architectures Showcase](concepts/system-architectures.md): Real-world systems autonomously created by Gas Town (LinkShelf Go/SQLite and FinAlly financial platform).
+

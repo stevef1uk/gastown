@@ -104,3 +104,12 @@ Every agent role has a clear behavioral contract in Markdown.
 1. **Self-Healing Recovery**: If QA or the Tester detects a defect, the **Mayor Recovery Engine** diagnoses the root cause, reopens the exact affected bead, and loops back without stalling human engineers.
 2. **Deterministic Verification**: Code is never marked complete based on LLM claims; it must compile, pass automated unit tests, and satisfy real browser interactions.
 3. **Executive Visibility**: The **Requirements Traceability Matrix (`gt rig rtm <rig> --summary`)** provides instant 100% audit proof connecting requirements, beads, tests, and deployment assets.
+
+---
+
+## 5. Architectural Deep Dives & Rig Showcases
+
+For detailed technical deep dives and architectural diagrams, see:
+- [Platform Re-Architecture & Infrastructure Extensions](platform-rearchitecture.md): Replacing TMUX with NATS, introducing the `gt-agent` LLM harness, `gt-orchestrator`, and Freeride mTLS reverse proxy.
+- [Autonomous System Architectures Showcase](system-architectures.md): Real-world production architectures delivered by Gas Town rigs (LinkShelf bookmark manager and FinAlly financial intelligence platform).
+
