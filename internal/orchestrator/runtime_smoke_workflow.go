@@ -113,7 +113,7 @@ func IsDevServerSmokeCommand(cmd string) bool {
 	if strings.Contains(lower, "docker compose") || strings.Contains(lower, "docker-compose") {
 		return false
 	}
-	if strings.Contains(lower, "go run") && strings.Contains(lower, "cmd/server") {
+	if strings.Contains(lower, "go run") && (strings.Contains(lower, "cmd/") || strings.Contains(lower, "cmd\\")) {
 		return true
 	}
 	if IsFlatGoServerCommand(cmd) {

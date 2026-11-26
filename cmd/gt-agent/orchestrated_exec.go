@@ -299,20 +299,41 @@ func isToolchainExecutionCommand(cmd string) bool {
 }
 
 var (
-	goRunCmdServerMainRE = regexp.MustCompile(`\bgo\s+run\s+(\./)?cmd/server/main\.go\b`)
+	goRunCmdServerMainRE = regexp.MustCompile(`\bgo\s+run\s+(\./)?cmd/([^/\s]+)/main\.go\b`)
 	goRunMainRE          = regexp.MustCompile(`\bgo\s+run\s+(\./)?main\.go\b`)
 )
 
 func normalizeGoRunTarget(cmd string) string {
-	cmd = goRunCmdServerMainRE.ReplaceAllString(cmd, "go run ./cmd/server")
+	cmd = goRunCmdServerMainRE.ReplaceAllString(cmd, "go run ./cmd/$2")
 	return goRunMainRE.ReplaceAllString(cmd, "go run .")
 }
 
-// isGoDevServerSmokeCommand reports go run ./cmd/server (with or without curl).
+// extractGoRunTarget parses out the go run target (e.g. ./cmd/taskboard or .) from a command line.
+func extractGoRunTarget(cmd string) string {
+	parts := strings.Fields(cmd)
+	for i, p := range parts {
+		token := strings.TrimLeft(p, "([{\"'`")
+		if token == "go" && i+1 < len(parts) && strings.Trim(parts[i+1], `"'`) == "run" && i+2 < len(parts) {
+			target := strings.TrimRight(parts[i+2], ")]};\"'`")
+			if strings.HasPrefix(target, "cmd/") || strings.HasPrefix(target, "./cmd/") {
+				if !strings.HasPrefix(target, "./") {
+					target = "./" + target
+				}
+				return "go run " + target
+			}
+			if target == "." || target == "./" || target == "main.go" || target == "./main.go" {
+				return "go run ."
+			}
+		}
+	}
+	return ""
+}
+
+// isGoDevServerSmokeCommand reports go run ./cmd/... (with or without curl).
 // Also detects go run . or go run ./ for flat-layout projects (e.g., helloapi).
 func isGoDevServerSmokeCommand(cmd string) bool {
 	lower := strings.ToLower(cmd)
-	if strings.Contains(lower, "go run") && strings.Contains(lower, "cmd/server") {
+	if strings.Contains(lower, "go run") && (strings.Contains(lower, "cmd/") || strings.Contains(lower, "cmd\\")) {
 		return true
 	}
 	parts := strings.Fields(lower)
@@ -1524,7 +1545,9 @@ func simplifyDevServerSmoke(cmd, townRoot, rig string, v orchestrator.WorkflowVa
 	if spec.ServerStart == "" {
 		if orchestrator.WorkflowUsesPython(v) {
 			spec.ServerStart = orchestrator.ExtractPythonServerStartFromText(cmd)
-		} else if orchestrator.IsFlatGoServerCommand(cmd) || !strings.Contains(cmd, "cmd/server") {
+		} else if target := extractGoRunTarget(cmd); target != "" {
+			spec.ServerStart = target
+		} else if orchestrator.IsFlatGoServerCommand(cmd) {
 			spec.ServerStart = "go run ."
 		} else {
 			spec.ServerStart = "go run ./cmd/server"

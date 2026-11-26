@@ -399,6 +399,15 @@ func TestNormalizeGoDevServerSmokeCommand_syncGoRunUpgradesToProbe(t *testing.T)
 	}
 }
 
+func TestIsGoDevServerSmokeCommand_customCmd(t *testing.T) {
+	if !isGoDevServerSmokeCommand("cd tasks/mayor/rig/taskboard && go run ./cmd/taskboard") {
+		t.Fatal("expected go run ./cmd/taskboard to be recognized as dev server smoke")
+	}
+	if !orchestrator.IsDevServerSmokeCommand("cd tasks/mayor/rig/taskboard && go run ./cmd/taskboard") {
+		t.Fatal("expected orchestrator to recognize go run ./cmd/taskboard")
+	}
+}
+
 // TestStateRunner_rewriteCommand_qaGoRunSleepOnly is the regression from testgt3 QA logs:
 // agent sent go run & sleep with no curls; must become profile probe, not sleep-only rewrite.
 func TestStateRunner_rewriteCommand_qaGoRunSleepOnly(t *testing.T) {
