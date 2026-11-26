@@ -1,6 +1,7 @@
 package rtm
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
 	"strings"
@@ -8,7 +9,7 @@ import (
 )
 
 // HTML generates a standalone, interactive HTML report with search, category filtering,
-// and scrollable tables to display full un-truncated paths and descriptions.
+// scrollable tables, and an interactive code viewing panel to inspect actual rig artifacts on disk.
 func (r *RTMReport) HTML() string {
 	var sb strings.Builder
 
@@ -23,6 +24,15 @@ func (r *RTMReport) HTML() string {
 		coverageColor = "#ef4444" // red
 	} else if r.Warnings > 0 {
 		coverageColor = "#f59e0b" // amber
+	}
+
+	fileDataJSON, err := json.Marshal(r.FileContents)
+	if err != nil {
+		fileDataJSON = []byte("{}")
+	}
+	filePathsJSON, err := json.Marshal(r.FileAbsolutePaths)
+	if err != nil {
+		filePathsJSON = []byte("{}")
 	}
 
 	sb.WriteString(fmt.Sprintf(`<!DOCTYPE html>
@@ -146,6 +156,10 @@ h1 { font-size: 1.85rem; font-weight: 700; color: #fff; }
   border-radius: 0.375rem;
   font-size: 0.8rem;
   cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   transition: all 0.15s ease;
 }
 .pill-btn:hover { color: #fff; border-color: var(--text-muted); }
@@ -186,9 +200,8 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .path-cell {
   font-family: var(--mono);
   font-size: 0.825rem;
-  color: #38bdf8;
   word-break: break-all;
-  max-width: 380px;
+  max-width: 420px;
 }
 .bead-id {
   font-family: var(--mono);
@@ -199,6 +212,90 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .audit-pass { color: var(--success); font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; }
 .audit-warn { color: var(--warning); font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; }
 .audit-fail { color: var(--danger); font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; }
+
+/* Interactive File Links */
+.file-link {
+  color: #38bdf8;
+  text-decoration: none;
+  font-family: var(--mono);
+  font-size: 0.825rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  border-bottom: 1px dashed rgba(56, 189, 248, 0.4);
+  padding: 0.1rem 0.25rem;
+  border-radius: 0.25rem;
+  transition: all 0.15s ease;
+}
+.file-link:hover {
+  color: #7dd3fc;
+  border-bottom-color: #38bdf8;
+  background: var(--accent-dim);
+}
+.file-icon { font-size: 0.85rem; opacity: 0.8; }
+
+/* Viewing Panel Below */
+.viewer-section {
+  border: 1px solid #334155;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  margin-top: 2.5rem;
+}
+.viewer-header {
+  background: #0f172a;
+}
+.viewer-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.viewer-filename {
+  font-family: var(--mono);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+}
+.viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.viewer-empty {
+  padding: 3.5rem 2rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+.code-container {
+  display: flex;
+  background: #080d1a;
+  max-height: 560px;
+  overflow: auto;
+}
+.line-numbers {
+  padding: 1rem 0.75rem;
+  text-align: right;
+  color: #4b5563;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  user-select: none;
+  background: #060913;
+  border-right: 1px solid var(--card-border);
+}
+pre {
+  margin: 0;
+  padding: 1rem;
+  flex: 1;
+}
+.code-body {
+  font-family: var(--mono);
+  font-size: 0.825rem;
+  line-height: 1.5;
+  color: #e2e8f0;
+  white-space: pre;
+}
 
 /* Expandable scenarios */
 details summary {
@@ -292,6 +389,7 @@ footer {
 <div class="section">
   <div class="section-header">
     <div class="section-title">Requirements & Quality Verification Gates</div>
+    <div style="font-size: 0.8rem; color: var(--text-muted);">Click any test file to view assertions below</div>
   </div>
   <div class="table-wrapper">
     <table>
@@ -318,6 +416,10 @@ footer {
 		} else if row.AuditStatus == AuditPending {
 			auditHTML = `<span style="color:var(--text-muted)">⏳ PEND</span>`
 		}
+
+		cleanTestPath := CleanArtifactPath(row.TestFile, r.Rig)
+		fileLinkHTML := fmt.Sprintf(`<a href="javascript:void(0)" class="file-link" onclick="openFileViewer('%s')"><span class="file-icon">📄</span>%s</a>`,
+			html.EscapeString(cleanTestPath), html.EscapeString(cleanTestPath))
 
 		detailsHTML := ""
 		if len(row.Scenarios) > 0 || len(row.Assertions) > 0 {
@@ -359,7 +461,7 @@ footer {
 			detailsHTML,
 			html.EscapeString(row.BeadID),
 			html.EscapeString(row.Phase),
-			html.EscapeString(CleanArtifactPath(row.TestFile, r.Rig)),
+			fileLinkHTML,
 			html.EscapeString(row.Level),
 			auditHTML,
 		))
@@ -397,7 +499,7 @@ footer {
           <th>Bead</th>
           <th>Status</th>
           <th>Category</th>
-          <th>Target Artifact</th>
+          <th>Target Artifact (Click to View)</th>
           <th>Capability / Purpose</th>
         </tr>
       </thead>
@@ -443,6 +545,9 @@ footer {
 			}
 		}
 
+		fileLinkHTML := fmt.Sprintf(`<a href="javascript:void(0)" class="file-link" onclick="openFileViewer('%s')"><span class="file-icon">📄</span>%s</a>`,
+			html.EscapeString(artifact), html.EscapeString(artifact))
+
 		sb.WriteString(fmt.Sprintf(`
         <tr data-category="%s">
           <td><span class="bead-id">%s</span></td>
@@ -457,7 +562,7 @@ footer {
 			html.EscapeString(b.Status),
 			catClass,
 			html.EscapeString(b.Category),
-			html.EscapeString(artifact),
+			fileLinkHTML,
 			html.EscapeString(purpose),
 		))
 	}
@@ -465,6 +570,33 @@ footer {
 	sb.WriteString(`
       </tbody>
     </table>
+  </div>
+</div>
+`)
+
+	// Section 3: Interactive Artifact Code Viewer Panel
+	sb.WriteString(`
+<div id="fileViewerSection" class="section viewer-section">
+  <div class="section-header viewer-header">
+    <div class="viewer-meta">
+      <span class="file-icon" style="font-size: 1.25rem;">📄</span>
+      <span id="viewerFileName" class="viewer-filename">Select a file above to view contents</span>
+      <span id="viewerBadge" class="badge" style="display:none;"></span>
+      <span id="viewerLines" class="badge badge-accent" style="display:none;"></span>
+    </div>
+    <div class="viewer-actions">
+      <a id="viewerRawLink" href="#" class="pill-btn" target="_blank" style="display:none;">Open Raw File ↗</a>
+      <button id="copyCodeBtn" class="pill-btn" onclick="copyViewerCode()" style="display:none;">Copy Code</button>
+      <button id="closeViewerBtn" class="pill-btn" onclick="closeViewer()" style="display:none;">✕ Close</button>
+    </div>
+  </div>
+  <div id="viewerEmptyState" class="viewer-empty">
+    <div style="font-size: 1.75rem; margin-bottom: 0.5rem; opacity: 0.6;">🔍</div>
+    <div>Click any test file or target artifact above to inspect its implementation on disk.</div>
+  </div>
+  <div id="viewerContent" class="code-container" style="display: none;">
+    <div id="lineNumbers" class="line-numbers"></div>
+    <pre><code id="viewerCode" class="code-body"></code></pre>
   </div>
 </div>
 
@@ -475,6 +607,9 @@ footer {
 </div>
 
 <script>
+const fileData = ` + string(fileDataJSON) + `;
+const filePaths = ` + string(filePathsJSON) + `;
+
 let currentCategory = 'all';
 
 function setCategoryFilter(cat, btn) {
@@ -508,6 +643,91 @@ function filterBeads() {
     } else {
       row.style.display = 'none';
     }
+  });
+}
+
+function openFileViewer(path) {
+  const content = fileData[path] || fileData[path.replace(/^\/+/, '')] || '';
+  const absPath = filePaths[path] || filePaths[path.replace(/^\/+/, '')] || '';
+
+  const viewerSection = document.getElementById('fileViewerSection');
+  const fileNameEl = document.getElementById('viewerFileName');
+  const badgeEl = document.getElementById('viewerBadge');
+  const linesEl = document.getElementById('viewerLines');
+  const rawLinkEl = document.getElementById('viewerRawLink');
+  const copyBtn = document.getElementById('copyCodeBtn');
+  const closeBtn = document.getElementById('closeViewerBtn');
+  const emptyState = document.getElementById('viewerEmptyState');
+  const contentEl = document.getElementById('viewerContent');
+  const codeEl = document.getElementById('viewerCode');
+  const lineNumbersEl = document.getElementById('lineNumbers');
+
+  fileNameEl.textContent = path;
+
+  if (!content) {
+    emptyState.style.display = 'block';
+    emptyState.innerHTML = '<div style="font-size:1.5rem; margin-bottom:0.5rem; color:var(--warning);">⚠️</div><div>Artifact file not found on disk: <code>' + path + '</code></div>';
+    contentEl.style.display = 'none';
+    badgeEl.style.display = 'none';
+    linesEl.style.display = 'none';
+    rawLinkEl.style.display = 'none';
+    copyBtn.style.display = 'none';
+    closeBtn.style.display = 'inline-flex';
+    viewerSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+
+  emptyState.style.display = 'none';
+  contentEl.style.display = 'flex';
+  badgeEl.style.display = 'inline-flex';
+  linesEl.style.display = 'inline-flex';
+  copyBtn.style.display = 'inline-flex';
+  closeBtn.style.display = 'inline-flex';
+
+  // Format badge
+  const ext = path.split('.').pop().toLowerCase();
+  badgeEl.textContent = ext.toUpperCase() + ' File';
+
+  // Code body
+  codeEl.textContent = content;
+
+  // Line numbers
+  const lines = content.split('\n');
+  let nums = '';
+  for (let i = 1; i <= lines.length; i++) {
+    nums += i + '\n';
+  }
+  lineNumbersEl.textContent = nums;
+
+  if (absPath) {
+    rawLinkEl.style.display = 'inline-flex';
+    rawLinkEl.href = 'file://' + absPath;
+  } else {
+    rawLinkEl.style.display = 'none';
+  }
+
+  viewerSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closeViewer() {
+  document.getElementById('viewerContent').style.display = 'none';
+  document.getElementById('viewerEmptyState').style.display = 'block';
+  document.getElementById('viewerEmptyState').innerHTML = '<div style="font-size: 1.75rem; margin-bottom: 0.5rem; opacity: 0.6;">🔍</div><div>Click any test file or target artifact above to inspect its implementation on disk.</div>';
+  document.getElementById('viewerFileName').textContent = 'Select a file above to view contents';
+  document.getElementById('viewerBadge').style.display = 'none';
+  document.getElementById('viewerLines').style.display = 'none';
+  document.getElementById('viewerRawLink').style.display = 'none';
+  document.getElementById('copyCodeBtn').style.display = 'none';
+  document.getElementById('closeViewerBtn').style.display = 'none';
+}
+
+function copyViewerCode() {
+  const code = document.getElementById('viewerCode').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    const btn = document.getElementById('copyCodeBtn');
+    const old = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = old; }, 1500);
   });
 }
 </script>

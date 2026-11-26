@@ -86,18 +86,20 @@ const (
 
 // RTMReport holds the complete Requirements Traceability Matrix for a rig.
 type RTMReport struct {
-	Rig         string       `json:"rig"`
-	GeneratedAt time.Time    `json:"generated_at"`
-	ActivePhase string       `json:"active_phase,omitempty"`
-	Rows        []RTMRow     `json:"rows"`
-	Beads       []RTMBeadRow `json:"beads,omitempty"`
-	Summary     RTMSummary   `json:"summary"`
-	TotalReqs   int          `json:"total_requirements"`
-	Passed      int          `json:"passed"`
-	Warnings    int          `json:"warnings"`
-	Pending     int          `json:"pending"`
-	Failures    int          `json:"failures"`
-	ScorePct    float64      `json:"score_percent"`
+	Rig               string            `json:"rig"`
+	GeneratedAt       time.Time         `json:"generated_at"`
+	ActivePhase       string            `json:"active_phase,omitempty"`
+	Rows              []RTMRow          `json:"rows"`
+	Beads             []RTMBeadRow      `json:"beads,omitempty"`
+	Summary           RTMSummary        `json:"summary"`
+	FileContents      map[string]string `json:"file_contents,omitempty"`
+	FileAbsolutePaths map[string]string `json:"file_absolute_paths,omitempty"`
+	TotalReqs         int               `json:"total_requirements"`
+	Passed            int               `json:"passed"`
+	Warnings          int               `json:"warnings"`
+	Pending           int               `json:"pending"`
+	Failures          int               `json:"failures"`
+	ScorePct          float64           `json:"score_percent"`
 }
 
 var reqHeadingRE = regexp.MustCompile(`(?m)^###\s+(\S.*)$`)
@@ -313,8 +315,10 @@ func GenerateRTM(townRoot, rigName string) (*RTMReport, error) {
 	}
 
 	report := &RTMReport{
-		Rig:         rigName,
-		GeneratedAt: time.Now().UTC(),
+		Rig:               rigName,
+		GeneratedAt:       time.Now().UTC(),
+		FileContents:      make(map[string]string),
+		FileAbsolutePaths: make(map[string]string),
 	}
 
 	// 1. Load workflow profile if present
@@ -571,7 +575,78 @@ func GenerateRTM(townRoot, rigName string) (*RTMReport, error) {
 		}
 	}
 
+	// Load file contents from disk for interactive browser viewing
+	recordFile := func(targetPath string) {
+		if targetPath == "" || strings.HasPrefix(targetPath, "-") {
+			return
+		}
+		clean := CleanArtifactPath(targetPath, rigName)
+		if _, exists := report.FileContents[clean]; exists {
+			return
+		}
+		if content, absPath, ok := tryReadFileContent(rigDir, targetPath); ok {
+			report.FileContents[clean] = content
+			report.FileAbsolutePaths[clean] = absPath
+			report.FileContents[targetPath] = content
+			report.FileAbsolutePaths[targetPath] = absPath
+		}
+	}
+
+	for _, row := range report.Rows {
+		recordFile(row.TestFile)
+	}
+	for _, bead := range report.Beads {
+		recordFile(bead.Artifact)
+		if p, ok := planBeadMap[bead.ID]; ok {
+			recordFile(p)
+		}
+	}
+
 	return report, nil
+}
+
+func tryReadFileContent(rigDir, targetPath string) (string, string, bool) {
+	target := strings.TrimSpace(targetPath)
+	if target == "" {
+		return "", "", false
+	}
+	target = strings.TrimPrefix(target, "./")
+
+	candidates := []string{
+		filepath.Join(rigDir, target),
+	}
+
+	// Also try stripped subproject prefix if target started with taskboard/ or finally/
+	for _, pfx := range []string{"taskboard/", "finally/"} {
+		if strings.HasPrefix(strings.ToLower(target), pfx) {
+			stripped := target[len(pfx):]
+			candidates = append(candidates, filepath.Join(rigDir, stripped))
+		}
+	}
+
+	// Try prepending subproject folder (e.g. taskboard/ or finally/) if rigDir contains one
+	entries, err := os.ReadDir(rigDir)
+	if err == nil {
+		for _, e := range entries {
+			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && e.Name() != "planning" {
+				candidates = append(candidates, filepath.Join(rigDir, e.Name(), target))
+			}
+		}
+	}
+
+	for _, cand := range candidates {
+		info, err := os.Stat(cand)
+		if err == nil && !info.IsDir() {
+			if info.Size() > 512*1024 {
+				return "(File size exceeds 512KB display limit)", cand, true
+			}
+			data, err := os.ReadFile(cand)
+			if err == nil {
+				return string(data), cand, true
+			}
+		}
+	}
+	return "", "", false
 }
 
 // CleanRequirementTitle extracts a concise, business-readable title from a requirement statement.
