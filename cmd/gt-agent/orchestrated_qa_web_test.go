@@ -415,6 +415,10 @@ func TestIsWebTestOrConfigArtifact_typeScriptDeclarationFiles(t *testing.T) {
 		"src/vite-env.d.ts",
 		"types/global.d.ts",
 		"app/declarations.d.ts",
+		"finally/frontend/tailwind.config.ts",
+		"finally/frontend/postcss.config.js",
+		"finally/frontend/next.config.js",
+		"frontend/vite.config.ts",
 	} {
 		if !isWebTestOrConfigArtifact(path) {
 			t.Errorf("expected isWebTestOrConfigArtifact(%q) = true, got false", path)

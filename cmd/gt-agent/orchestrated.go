@@ -4204,7 +4204,10 @@ func validateWebStaticReferences(townRoot, rig string, v orchestrator.WorkflowVa
 func isWebTestOrConfigArtifact(rel string) bool {
 	path := strings.ToLower(filepath.ToSlash(strings.TrimSpace(rel)))
 	base := filepath.Base(path)
-	if strings.HasPrefix(base, "playwright.config.") {
+	if strings.Contains(base, ".config.") || strings.HasPrefix(base, "playwright.config.") ||
+		strings.HasPrefix(base, "tailwind.") || strings.HasPrefix(base, "postcss.") ||
+		strings.HasPrefix(base, "next.config.") || strings.HasPrefix(base, "vite.config.") ||
+		strings.HasPrefix(base, "webpack.config.") {
 		return true
 	}
 	if strings.HasSuffix(base, ".d.ts") {
