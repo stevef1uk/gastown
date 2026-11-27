@@ -228,6 +228,18 @@ func TestIsDevServerSmokeCommand_flatGoRunDot(t *testing.T) {
 	if got := normalizeGoRunTarget("go run cmd/server/main.go"); got != "go run ./cmd/server" {
 		t.Fatalf("normalizeGoRunTarget = %q", got)
 	}
+	// Quoted arguments (sed/perl/echo) and heredoc bodies must NOT be rewritten,
+	// otherwise design-step edits to architecture.md cannot preserve SPEC verbatim commands.
+	for _, untouched := range []string{
+		`sed -i 's/go run \./go run main.go/g' architecture.md`,
+		`perl -pi -e "s/go run \\./go run main.go/g" architecture.md`,
+		"cat <<'EOF' > architecture.md\nLaunch: `cd pingapp && go run main.go`\nEOF",
+		"cat > architecture.md <<EOF\ncd pingapp && go run cmd/server/main.go\nEOF\n",
+	} {
+		if got := normalizeGoRunTarget(untouched); got != untouched {
+			t.Fatalf("normalizeGoRunTarget mutated quoted/heredoc command:\ngot:  %q\nwant: %q", got, untouched)
+		}
+	}
 	for _, in := range []string{"go test ./...", "go vet ./...", "go build ./...", "cd helloapi && go mod tidy"} {
 		if orchestrator.IsDevServerSmokeCommand(in) {
 			t.Fatalf("IsDevServerSmokeCommand(%q) should be false (toolchain, not server)", in)

@@ -303,9 +303,147 @@ var (
 	goRunMainRE          = regexp.MustCompile(`\bgo\s+run\s+(\./)?main\.go\b`)
 )
 
+// normalizeGoRunTarget rewrites direct file `go run main.go` / `go run cmd/<x>/main.go`
+// invocations into package targets (`go run .` / `go run ./cmd/<x>`) so sibling files
+// in package main compile together. It only rewrites unquoted shell command text —
+// never quoted arguments (e.g. sed/perl/echo) or heredoc bodies (e.g. writing
+// architecture.md / SPEC.md), so documentation edits keep SPEC launch commands verbatim.
 func normalizeGoRunTarget(cmd string) string {
-	cmd = goRunCmdServerMainRE.ReplaceAllString(cmd, "go run ./cmd/$2")
-	return goRunMainRE.ReplaceAllString(cmd, "go run .")
+	if !goRunMainRE.MatchString(cmd) && !goRunCmdServerMainRE.MatchString(cmd) {
+		return cmd
+	}
+	rewrite := func(s string) string {
+		s = goRunCmdServerMainRE.ReplaceAllString(s, "go run ./cmd/$2")
+		return goRunMainRE.ReplaceAllString(s, "go run .")
+	}
+	var out strings.Builder
+	out.Grow(len(cmd))
+	var unquoted strings.Builder
+	flushUnquoted := func() {
+		if unquoted.Len() > 0 {
+			out.WriteString(rewrite(unquoted.String()))
+			unquoted.Reset()
+		}
+	}
+
+	inSingle := false
+	inDouble := false
+	heredocDelim := ""
+	pendingHeredocDelim := ""
+
+	i := 0
+	for i < len(cmd) {
+		// Inside a heredoc body: copy verbatim line by line until closing delimiter.
+		if heredocDelim != "" {
+			nl := strings.IndexByte(cmd[i:], '\n')
+			var line, rest string
+			if nl < 0 {
+				line = cmd[i:]
+				rest = ""
+			} else {
+				line = cmd[i : i+nl]
+				rest = "\n"
+			}
+			out.WriteString(line)
+			out.WriteString(rest)
+			if strings.TrimSpace(line) == heredocDelim {
+				heredocDelim = ""
+			}
+			if nl < 0 {
+				break
+			}
+			i += nl + 1
+			continue
+		}
+
+		ch := cmd[i]
+		if inSingle {
+			out.WriteByte(ch)
+			if ch == '\'' {
+				inSingle = false
+			}
+			i++
+			continue
+		}
+		if inDouble {
+			out.WriteByte(ch)
+			if ch == '\\' && i+1 < len(cmd) {
+				i++
+				out.WriteByte(cmd[i])
+			} else if ch == '"' {
+				inDouble = false
+			}
+			i++
+			continue
+		}
+
+		// Unquoted shell context.
+		if ch == '\\' && i+1 < len(cmd) {
+			unquoted.WriteByte(ch)
+			i++
+			unquoted.WriteByte(cmd[i])
+			i++
+			continue
+		}
+		if ch == '\'' {
+			flushUnquoted()
+			inSingle = true
+			out.WriteByte(ch)
+			i++
+			continue
+		}
+		if ch == '"' {
+			flushUnquoted()
+			inDouble = true
+			out.WriteByte(ch)
+			i++
+			continue
+		}
+		// Detect heredoc operator `<<` (not `<<<` here-string).
+		if ch == '<' && i+1 < len(cmd) && cmd[i+1] == '<' && (i+2 >= len(cmd) || cmd[i+2] != '<') {
+			j := i + 2
+			if j < len(cmd) && cmd[j] == '-' {
+				j++
+			}
+			for j < len(cmd) && (cmd[j] == ' ' || cmd[j] == '\t') {
+				j++
+			}
+			delimStart := j
+			if j < len(cmd) && (cmd[j] == '\'' || cmd[j] == '"') {
+				q := cmd[j]
+				j++
+				delimStart = j
+				for j < len(cmd) && cmd[j] != q {
+					j++
+				}
+				if delim := cmd[delimStart:j]; delim != "" {
+					pendingHeredocDelim = delim
+				}
+			} else {
+				for j < len(cmd) && !strings.ContainsRune(" \t\r\n;|&<>()", rune(cmd[j])) {
+					j++
+				}
+				if delim := strings.TrimPrefix(cmd[delimStart:j], `\`); delim != "" {
+					pendingHeredocDelim = delim
+				}
+			}
+			unquoted.WriteString("<<")
+			i += 2
+			continue
+		}
+		if ch == '\n' && pendingHeredocDelim != "" {
+			unquoted.WriteByte(ch)
+			flushUnquoted()
+			heredocDelim = pendingHeredocDelim
+			pendingHeredocDelim = ""
+			i++
+			continue
+		}
+		unquoted.WriteByte(ch)
+		i++
+	}
+	flushUnquoted()
+	return out.String()
 }
 
 // extractGoRunTarget parses out the go run target (e.g. ./cmd/taskboard or .) from a command line.
