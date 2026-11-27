@@ -52,13 +52,13 @@ Register on `http.DefaultServeMux` from `main`.
 ## Definition of done
 
 1. `cd pingapp && go test ./...` — passes.
-2. `cd pingapp && go run main.go & sleep 1 && curl http://localhost:8080/ping` — returns `{"message": "pong"}`.
+2. `cd pingapp && go run main.go & sleep 1 && curl -sf http://127.0.0.1:8080/ping` — returns `{"message": "pong"}`.
 
 **CRITICAL NOTE FOR AGENTS**: DO NOT run `go run main.go` or `./pingapp` in the foreground during implementation or testing. Because it is an HTTP server, it will block forever and cause you to hang indefinitely. Always run it in the background with `&` and test using `curl`, or rely on `go test`.
 
 ## Delivery Phases
-1. **go-module** — Initialize go.mod
-2. **core** — main.go (handler + server)
-3. **test** — main_test.go (unit tests)
+1. **go-module** — Initialize `pingapp/go.mod` (verify: `cd pingapp && go mod tidy`)
+2. **core** — Implement `pingapp/main.go` (handler + server) (verify: `cd pingapp && go build ./...`)
+3. **test** — Implement `pingapp/main_test.go` (unit tests + runtime smoke) (verify: `cd pingapp && go test ./...`)
 
-> **Why this order:** `go-module` first establishes the module. `core` implements the handler and server. `test` adds unit tests.
+> **Why this order:** `go-module` first establishes the module. `core` implements the handler and server. `test` adds unit tests and runs the full test suite and smoke check.

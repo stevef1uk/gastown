@@ -7,7 +7,7 @@ A tiny Python application with a single HTTP endpoint using FastAPI. Success for
 ```bash
 cd pingapp && pip install -r requirements.txt && pytest
 ```
-passes, and `cd pingapp && uvicorn main:app --port 8080` serves the endpoint.
+passes, and `cd pingapp && uvicorn main:app --host 127.0.0.1 --port 8080` serves the endpoint on `127.0.0.1:8080`.
 
 Keep implementations small and literal. No extra files or abstractions.
 
@@ -51,15 +51,14 @@ httpx==0.24.1
 
 ## Definition of done
 
-1. `cd pingapp && pytest test_main.py` — passes.
-2. `cd pingapp && uvicorn main:app --port 8080 & curl http://localhost:8080/ping` — returns `{"message": "pong"}`.
+1. `cd pingapp && pytest` — passes.
+2. `cd pingapp && uvicorn main:app --host 127.0.0.1 --port 8080 & sleep 1 && curl -sf http://127.0.0.1:8080/ping` — returns `{"message": "pong"}`.
 
 **CRITICAL NOTE FOR AGENTS**: DO NOT run `uvicorn` or any other HTTP server in the foreground during implementation or testing. Because it is a blocking server, it will block forever and cause you to hang indefinitely. Always run it in the background with `&` and test using `curl`, or rely entirely on `pytest`.
 
 ## Delivery Phases
-1. **python-setup** — Initialize requirements.txt / venv
-2. **core** — main.py (FastAPI app + endpoint)
-3. **test** — test_main.py (unit tests)
-4. **integration-test** — Full smoke test (run server + curl)
+1. **python-setup** — Initialize `pingapp/requirements.txt` and Python venv (verify: `cd pingapp && pip install -r requirements.txt`)
+2. **core** — Implement `pingapp/main.py` (FastAPI app + `/ping` endpoint) (verify: `cd pingapp && python3 -m py_compile main.py`)
+3. **test** — Implement `pingapp/test_main.py` (unit tests + runtime smoke) (verify: `cd pingapp && pytest`)
 
-> **Why this order:** `python-setup` first establishes dependencies. `core` implements the FastAPI app and endpoint. `test` adds unit tests. `integration-test` runs the server and verifies the endpoint with curl.
+> **Why this order:** `python-setup` first establishes dependencies. `core` implements the FastAPI app and endpoint. `test` adds unit tests and runs the full test suite and smoke check.
