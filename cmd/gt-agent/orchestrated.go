@@ -3539,12 +3539,13 @@ func validateTesterCommand(cmd, rig, townRoot, state string, v orchestrator.Work
 	if orchestrator.IsTestPlanFrozen(townRoot, rig) && orchestrator.IsTesterWritingTestPlan(cmd) && state != "test_plan_rework" {
 		return fmt.Errorf("TEST_PLAN.md is frozen after initial validation — cannot rewrite; use outcome plan_gap to request a new plan from the planner if needed")
 	}
+	allowPipInstall := state == "test_review" && strings.Contains(strings.ToLower(v.ActivePhaseQAVerifyCommand()), "pip install")
 	forbidden := []struct {
 		cond bool
 		msg  string
 	}{
 		{strings.Contains(lower, "/workspace"), "do not use /workspace paths — work from $GT_ROOT"},
-		{strings.Contains(lower, "pip install"), "do not install packages in tester steps"},
+		{!allowPipInstall && strings.Contains(lower, "pip install"), "do not install packages in tester steps"},
 		{strings.Contains(lower, "bd create"), "do not create beads in tester steps"},
 		{strings.Contains(lower, "bd close"), "do not close beads in tester steps — report failure with bead IDs so the polecat fixes them"},
 		{strings.Contains(lower, "bd delete"), "do not delete beads in tester steps"},
