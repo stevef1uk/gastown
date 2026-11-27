@@ -10,20 +10,42 @@ func TestParseAPISmokeSpecText_buildsProbes(t *testing.T) {
 	text := `
 | GET | / | index |
 | GET | /api/links | JSON array when empty |
+| GET | /api/stream/prices | SSE stream of live price updates |
 | POST | /api/links | 201 |
 `
 	spec := parseAPISmokeSpecText(text, WorkflowValidation{})
-	if len(spec.Probes) < 3 {
+	if len(spec.Probes) < 4 {
 		t.Fatalf("probes=%v", spec.Probes)
 	}
-	var hasEmptyAPI bool
+	var hasEmptyAPI, hasStreamAPI bool
 	for _, p := range spec.Probes {
 		if p.Path == "/api/links" && p.Method == "GET" && p.Expect == SmokeExpectEmptyJSONArray {
 			hasEmptyAPI = true
 		}
+		if p.Path == "/api/stream/prices" && p.Method == "GET" && p.Expect == SmokeExpectStream {
+			hasStreamAPI = true
+		}
 	}
 	if !hasEmptyAPI {
 		t.Fatalf("want empty-array GET probe, got %v", spec.Probes)
+	}
+	if !hasStreamAPI {
+		t.Fatalf("want stream GET probe, got %v", spec.Probes)
+	}
+}
+
+func TestBuildRuntimeSmokeShell_streamingProbeHandlesExit28(t *testing.T) {
+	t.Parallel()
+	spec := APISmokeSpec{
+		Port: 8080,
+		Probes: []HTTPEndpointProbe{
+			{Method: "GET", Path: "/api/stream/prices", Expect: SmokeExpectStream, Source: "api"},
+		},
+		ServerStart: "uvicorn main:app --port 8080",
+	}
+	cmd := BuildRuntimeSmokeShell("/tmp/work", spec)
+	if !strings.Contains(cmd, "test $_rc -eq 28") {
+		t.Fatalf("streaming probe must tolerate exit 28 on infinite streams: %q", cmd)
 	}
 }
 

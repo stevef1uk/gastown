@@ -12,6 +12,7 @@ type SmokeExpect int
 const (
 	SmokeExpectOK SmokeExpect = iota
 	SmokeExpectEmptyJSONArray
+	SmokeExpectStream
 )
 
 // HTTPEndpointProbe is one curl step against a documented route (SPEC/architecture/plan).
@@ -22,6 +23,14 @@ type HTTPEndpointProbe struct {
 	Expect SmokeExpect
 	Body   string // POST JSON body when Method is POST
 	Source string // api | static | root
+}
+
+func (p HTTPEndpointProbe) isStream() bool {
+	if p.Expect == SmokeExpectStream {
+		return true
+	}
+	path := strings.ToLower(p.Path)
+	return strings.Contains(path, "/stream") || strings.Contains(path, "/sse") || strings.Contains(path, "/events")
 }
 
 func (p HTTPEndpointProbe) smokeMarkerLabel() string {
@@ -42,9 +51,11 @@ func (p HTTPEndpointProbe) shellSteps(base string) []string {
 	const curlOpts = `--connect-timeout 1 --max-time 2`
 	switch method {
 	case "GET":
-		switch p.Expect {
-		case SmokeExpectEmptyJSONArray:
+		switch {
+		case p.Expect == SmokeExpectEmptyJSONArray:
 			parts = append(parts, fmt.Sprintf(`test "$(curl -s %s %s)" = "[]"`, curlOpts, bashSingleQuote(url)))
+		case p.Expect == SmokeExpectStream || p.isStream():
+			parts = append(parts, fmt.Sprintf(`(_res=$(curl -s -f -N %s %s 2>&1) || { _rc=$?; test $_rc -eq 28 && test -n "$_res"; })`, curlOpts, bashSingleQuote(url)))
 		default:
 			parts = append(parts, fmt.Sprintf(`curl -s %s %s`, curlOpts, bashSingleQuote(url)))
 		}
@@ -77,10 +88,14 @@ func appendAPIProbe(spec *APISmokeSpec, seen map[string]bool, method, path, deta
 	probe := HTTPEndpointProbe{Method: method, Path: path, Source: "api"}
 	if method == "GET" {
 		detailLower := strings.ToLower(detail)
+		pathLower := strings.ToLower(path)
 		if strings.Contains(detailLower, "json array") || strings.Contains(detailLower, "`[]`") ||
 			strings.Contains(detailLower, "returns `[]`") || strings.Contains(detailLower, "not `null`") ||
 			(strings.Contains(detailLower, "[]") && strings.Contains(detailLower, "empty")) {
 			probe.Expect = SmokeExpectEmptyJSONArray
+		} else if strings.Contains(detailLower, "stream") || strings.Contains(detailLower, "sse") ||
+			strings.Contains(pathLower, "/stream") || strings.Contains(pathLower, "/events") || strings.Contains(pathLower, "/sse") {
+			probe.Expect = SmokeExpectStream
 		}
 	}
 	if method == "POST" {
@@ -147,6 +162,8 @@ func materializeAPISmokeProbes(spec *APISmokeSpec) {
 		exp := SmokeExpectOK
 		if emptySet[path] {
 			exp = SmokeExpectEmptyJSONArray
+		} else if strings.Contains(strings.ToLower(path), "/stream") || strings.Contains(strings.ToLower(path), "/sse") || strings.Contains(strings.ToLower(path), "/events") {
+			exp = SmokeExpectStream
 		}
 		src := "api"
 		for _, s := range spec.StaticAssets {
