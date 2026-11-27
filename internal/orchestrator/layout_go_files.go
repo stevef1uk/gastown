@@ -285,9 +285,9 @@ func PruneStaleLayoutFiles(townRoot, rig string, v WorkflowValidation) (removed 
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		// Skip dependency directories that are not source files managed by the pipeline.
+		// Skip dependency and build artifact directories that are not source files managed by the pipeline.
 		base := filepath.Base(path)
-		if info.IsDir() && (base == "node_modules" || base == v.PythonVenvRelDir()) {
+		if info.IsDir() && (base == "node_modules" || base == v.PythonVenvRelDir() || base == ".next" || base == "_next" || base == ".turbo" || base == "__pycache__" || base == ".pytest_cache" || base == ".git") {
 			return filepath.SkipDir
 		}
 		if info.IsDir() || !hasManagedExtension(path) {
