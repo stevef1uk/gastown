@@ -1556,7 +1556,7 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 	for _, id := range phaseIDs {
 		skip := false
 		for _, p := range v.DeliveryPhases {
-			if strings.TrimSpace(p.ID) == strings.TrimSpace(id) && !PhaseShipsAutomatedTests(p) {
+			if strings.TrimSpace(p.ID) == strings.TrimSpace(id) && !v.PhaseShipsAutomatedTests(p) {
 				skip = true
 				break
 			}
@@ -1579,7 +1579,7 @@ func (v WorkflowValidation) PromptVars() map[string]string {
 	allPhaseIDsStr := strings.Join(allPhaseIDs, ", ")
 	var testPhaseIDs, setupPhaseIDs, outOfScopePhaseIDs []string
 	for _, phase := range v.DeliveryPhases {
-		if PhaseShipsAutomatedTests(phase) {
+		if v.PhaseShipsAutomatedTests(phase) {
 			testPhaseIDs = append(testPhaseIDs, phase.ID)
 		} else {
 			setupPhaseIDs = append(setupPhaseIDs, phase.ID)

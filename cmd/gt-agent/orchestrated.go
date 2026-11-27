@@ -3694,7 +3694,7 @@ func validateTestPlanArtifacts(townRoot, rig string, hadCmdFailure, testPlanWrit
 		}
 		var missing []string
 		for _, p := range v.DeliveryPhases {
-			if orchestrator.PhaseShipsAutomatedTests(p) && !phaseCovered[p.ID] {
+			if v.PhaseShipsAutomatedTests(p) && !phaseCovered[p.ID] {
 				missing = append(missing, p.ID)
 			}
 		}
@@ -3794,7 +3794,7 @@ func testPlanBlockAllowsEmptyTestFile(v orchestrator.WorkflowValidation, b orche
 		if strings.ToLower(strings.TrimSpace(p.ID)) != phaseID {
 			continue
 		}
-		if !orchestrator.PhaseShipsAutomatedTests(p) {
+		if !v.PhaseShipsAutomatedTests(p) {
 			return true
 		}
 		hasTestFile := false
@@ -3962,7 +3962,7 @@ func phaseIDsForTestValidation(v orchestrator.WorkflowValidation) []string {
 			if strings.TrimSpace(p.ID) != strings.TrimSpace(id) {
 				continue
 			}
-			if orchestrator.PhaseShipsAutomatedTests(p) {
+			if v.PhaseShipsAutomatedTests(p) {
 				ids = append(ids, id)
 			}
 			return

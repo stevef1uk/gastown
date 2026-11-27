@@ -641,3 +641,31 @@ func TestSetupOnlyTestPlanContract(t *testing.T) {
 		t.Fatalf("setup row needs actionable omission: %v", err)
 	}
 }
+
+func TestWorkflowPhaseShipsAutomatedTests_BuildOnlyCoreDeferredToTestPhase(t *testing.T) {
+	goWF := WorkflowValidation{
+		LayoutRoot: "pingapp",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "go-module", RequiredFiles: []string{"pingapp/go.mod"}, QAVerifyCommand: "cd pingapp && go mod tidy"},
+			{ID: "core", RequiredFiles: []string{"pingapp/main.go"}, QAVerifyCommand: "cd pingapp && go build ./..."},
+			{ID: "test", RequiredFiles: []string{"pingapp/main_test.go"}, QAVerifyCommand: "cd pingapp && go test ./..."},
+		},
+	}
+	vars := goWF.PromptVars()
+	if vars["test_plan_phase_ids"] != "test" || vars["setup_only_phase_ids"] != "go-module, core" {
+		t.Fatalf("go workflow phase split wrong: test_plan=%q setup_only=%q", vars["test_plan_phase_ids"], vars["setup_only_phase_ids"])
+	}
+
+	pyWF := WorkflowValidation{
+		LayoutRoot: "pingapp",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "python-setup", RequiredFiles: []string{"pingapp/requirements.txt"}, QAVerifyCommand: "cd pingapp && pip install -r requirements.txt"},
+			{ID: "core", RequiredFiles: []string{"pingapp/main.py"}, QAVerifyCommand: "cd pingapp && python3 -m py_compile main.py"},
+			{ID: "test", RequiredFiles: []string{"pingapp/test_main.py"}, QAVerifyCommand: "cd pingapp && pytest"},
+		},
+	}
+	pyVars := pyWF.PromptVars()
+	if pyVars["test_plan_phase_ids"] != "test" || pyVars["setup_only_phase_ids"] != "python-setup, core" {
+		t.Fatalf("python workflow phase split wrong: test_plan=%q setup_only=%q", pyVars["test_plan_phase_ids"], pyVars["setup_only_phase_ids"])
+	}
+}

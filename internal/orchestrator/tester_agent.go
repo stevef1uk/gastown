@@ -138,6 +138,60 @@ func PhaseShipsAutomatedTests(p DeliveryPhase) bool {
 	return true
 }
 
+// PhaseShipsAutomatedTests reports whether delivery phase p ships automated tests
+// within the context of workflow v. In addition to PhaseShipsAutomatedTests(p),
+// a build/compile-only phase (no automated test runner in qa_verify_command and no
+// declared test files in p.RequiredFiles) whose source files' conventional companion
+// tests are explicitly owned by another delivery phase does NOT ship automated tests
+// (e.g. core owns pingapp/main.go with `go build ./...`, while phase test explicitly
+// owns pingapp/main_test.go with `go test ./...`).
+func (v WorkflowValidation) PhaseShipsAutomatedTests(p DeliveryPhase) bool {
+	if !PhaseShipsAutomatedTests(p) {
+		return false
+	}
+	cmd := strings.ToLower(strings.TrimSpace(p.QAVerifyCommand))
+	if cmd == "" || hasAnyAutomatedTestRunner(cmd) {
+		return true
+	}
+	for _, f := range p.RequiredFiles {
+		if IsTestImplementPath(f) {
+			return true
+		}
+	}
+	if len(v.DeliveryPhases) <= 1 {
+		return true
+	}
+	var otherPhaseTests []string
+	for _, other := range v.DeliveryPhases {
+		if strings.EqualFold(strings.TrimSpace(other.ID), strings.TrimSpace(p.ID)) {
+			continue
+		}
+		for _, f := range other.RequiredFiles {
+			if IsTestImplementPath(f) {
+				otherPhaseTests = append(otherPhaseTests, filepath.ToSlash(strings.TrimSpace(f)))
+			}
+		}
+	}
+	if len(otherPhaseTests) == 0 {
+		return true
+	}
+	ownedScope := v
+	ownedScope.RequiredFiles = p.RequiredFiles
+	ownedScope.DeliveryPhases = nil
+	sourcesOwnedByOtherTests := map[string]bool{}
+	for _, tf := range otherPhaseTests {
+		if src := SourcePathForOwnedTest(tf, ownedScope); src != "" {
+			sourcesOwnedByOtherTests[filepath.ToSlash(strings.TrimSpace(src))] = true
+		}
+	}
+	for _, f := range p.RequiredFiles {
+		if isSourceWithCompanionTest(f) && !sourcesOwnedByOtherTests[filepath.ToSlash(strings.TrimSpace(f))] {
+			return true
+		}
+	}
+	return false
+}
+
 // TestPlanRequirementIDs returns the `### <req-id>` headings in TEST_PLAN.md.
 func TestPlanRequirementIDs(testPlan string) []string {
 	var out []string
@@ -686,7 +740,7 @@ func ValidateTestPlanPaths(v WorkflowValidation, blocks []TestPlanBlock) error {
 			phaseID = strings.TrimSpace(b.ReqID)
 		}
 		for _, phase := range v.DeliveryPhases {
-			if phase.ID == phaseID && !PhaseShipsAutomatedTests(phase) {
+			if phase.ID == phaseID && !v.PhaseShipsAutomatedTests(phase) {
 				return fmt.Errorf("TEST_PLAN.md includes setup-only phase %q: omit this row; no test file is required and architecture_failure is not appropriate for a setup-only phase", phaseID)
 			}
 		}
