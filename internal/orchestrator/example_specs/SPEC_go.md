@@ -11,7 +11,7 @@ passes, and `cd pingapp && go run main.go` serves the endpoint on `:8080`.
 
 Keep implementations small and literal. No extra files or abstractions.
 
-## Layout (implement beads only)
+## Layout (Create only these files)
 
 ```
 pingapp/
@@ -38,7 +38,7 @@ Register on `http.DefaultServeMux` from `main`.
 
 ## `pingapp/main.go`
 
-1. Define `func PingHandler(w http.ResponseWriter, r *http.Request)` that writes `{"message": "pong"}` with `Content-Type: application/json`.
+1. Define `func PingHandler(w http.ResponseWriter, r *http.Request)` that sets `Content-Type: application/json` and writes the exact literal string `{"message": "pong"}` (not json.Marshal, to avoid whitespace ambiguity).
 2. In `main()`, register the handler to `/ping`.
 3. Call `http.ListenAndServe(":8080", nil)` and log `listening on :8080`.
 
@@ -47,7 +47,7 @@ Register on `http.DefaultServeMux` from `main`.
 1. Define `func TestPing(t *testing.T)`.
 2. Use `httptest.NewRecorder()` and `http.NewRequest("GET", "/ping", nil)`.
 3. Call `PingHandler` directly.
-4. Assert that the status code is 200 and the body matches `{"message": "pong"}`.
+4. Assert that the status code is 200. Decode the JSON body and compare the "message" field to "pong", or assert that the trimmed body matches the exact literal string `{"message": "pong"}`.
 
 ## Definition of done
 

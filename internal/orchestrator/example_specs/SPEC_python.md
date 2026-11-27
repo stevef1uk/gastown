@@ -11,7 +11,7 @@ passes, and `cd pingapp && uvicorn main:app --port 8080` serves the endpoint.
 
 Keep implementations small and literal. No extra files or abstractions.
 
-## Layout (implement beads only)
+## Layout (Create only these files)
 
 ```
 pingapp/
