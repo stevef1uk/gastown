@@ -25,7 +25,18 @@ func EnsurePhaseBoundaryIsolation(townRoot, rig string, v WorkflowValidation) (i
 	rigDir := filepath.Join(townRoot, rig, "mayor", "rig")
 	stashBase := filepath.Join(rigDir, ".gastown", "phase-stash")
 
-	// 1. Restore any files stashed for active or completed delivery phases.
+	// 1. Identify all files required by completed and current phases.
+	currentAndPastFiles := make(map[string]bool)
+	for i := 0; i <= activeIdx; i++ {
+		for _, f := range v.DeliveryPhases[i].RequiredFiles {
+			norm := NormalizeBeadPathForLayout(filepath.ToSlash(strings.TrimSpace(f)), v.LayoutRoot)
+			if norm != "" {
+				currentAndPastFiles[norm] = true
+			}
+		}
+	}
+
+	// 2. Restore any files stashed for active or completed delivery phases.
 	for i := 0; i <= activeIdx; i++ {
 		phase := v.DeliveryPhases[i]
 		phaseStashDir := filepath.Join(stashBase, phase.ID)
@@ -64,13 +75,41 @@ func EnsurePhaseBoundaryIsolation(townRoot, rig string, v WorkflowValidation) (i
 		}
 	}
 
-	// 2. Identify all files required by completed and current phases.
-	currentAndPastFiles := make(map[string]bool)
-	for i := 0; i <= activeIdx; i++ {
-		for _, f := range v.DeliveryPhases[i].RequiredFiles {
-			norm := NormalizeBeadPathForLayout(filepath.ToSlash(strings.TrimSpace(f)), v.LayoutRoot)
-			if norm != "" {
-				currentAndPastFiles[norm] = true
+	// 3. Safety net: also rescue any active/past files that might be trapped in future-phase
+	// stash directories (e.g. from prior regressed states or files listed across multiple phases).
+	if info, statErr := os.Stat(stashBase); statErr == nil && info.IsDir() {
+		for i := activeIdx + 1; i < len(v.DeliveryPhases); i++ {
+			futurePhase := v.DeliveryPhases[i]
+			phaseStashDir := filepath.Join(stashBase, futurePhase.ID)
+			if pInfo, pErr := os.Stat(phaseStashDir); pErr == nil && pInfo.IsDir() {
+				_ = filepath.WalkDir(phaseStashDir, func(path string, d fs.DirEntry, werr error) error {
+					if werr != nil || d.IsDir() {
+						return werr
+					}
+					rel, relErr := filepath.Rel(phaseStashDir, path)
+					if relErr != nil {
+						return relErr
+					}
+					norm := NormalizeBeadPathForLayout(filepath.ToSlash(rel), v.LayoutRoot)
+					if currentAndPastFiles[norm] {
+						dest := filepath.Join(rigDir, rel)
+						if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+							return err
+						}
+						if err := os.Rename(path, dest); err != nil {
+							data, readErr := os.ReadFile(path)
+							if readErr != nil {
+								return readErr
+							}
+							if writeErr := os.WriteFile(dest, data, 0644); writeErr != nil {
+								return writeErr
+							}
+							_ = os.Remove(path)
+						}
+						restored = append(restored, filepath.ToSlash(rel))
+					}
+					return nil
+				})
 			}
 		}
 	}

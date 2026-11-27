@@ -206,6 +206,25 @@ func validateImplementWriteScope(townRoot, rig, activeBead, written string, v Wo
 				break
 			}
 		}
+		// Also allow self-healing if written matches a past (completed) phase required file that is missing or 0 bytes on disk.
+		if !allowStubFix && v.HasPhasedDelivery() {
+			activeIdx := v.ActivePhaseIndex()
+			if activeIdx > 0 {
+				var pastFiles []string
+				for i := 0; i < activeIdx; i++ {
+					pastFiles = append(pastFiles, v.DeliveryPhases[i].RequiredFiles...)
+				}
+				for _, req := range pastFiles {
+					if PathMatchesImplementWrite(written, req, pastFiles, v) {
+						path := ResolveRequiredFileOnDisk(rigDir, req, v.LayoutRoot)
+						if info, err := os.Stat(path); err != nil || info.Size() == 0 {
+							allowStubFix = true
+							break
+						}
+					}
+				}
+			}
+		}
 		// Allow writes during QA rework even when the queue is green (QA sent work back).
 		if !allowStubFix && !scope.QAReworkFromQAReview {
 			return fmt.Errorf("implementation queue is finished and go test ./... passes — do not EDIT/WRITE implement files; send JSON {\"outcome\":\"success\",\"summary\":\"...\"} only")

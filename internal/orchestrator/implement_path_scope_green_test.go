@@ -106,3 +106,41 @@ func TestValidateImplementWritePath_allowsWhenQueueGreenButUnionStubRemains(t *t
 		t.Fatalf("expected write allowed to fix union stub, got: %v", err)
 	}
 }
+
+func TestValidateImplementWritePath_allowsWhenQueueGreenAndPastPhaseFileMissing(t *testing.T) {
+	dir := t.TempDir()
+	rig := "rig"
+	layout := "linkshelf"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+	goMod := filepath.Join(rigDir, layout, "go.mod")
+	if err := os.MkdirAll(filepath.Dir(goMod), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(goMod, []byte("module linkshelf\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := WorkflowValidation{
+		LayoutRoot:        layout,
+		BeadTitleContains: "Implement",
+		QAVerifyCommand:   "cd linkshelf && go test ./...",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "foundation", RequiredFiles: []string{layout + "/scripts/stop.sh"}},
+			{ID: "web-shell", RequiredFiles: []string{layout + "/web/index.html"}},
+		},
+		ActivePhaseIDField: "web-shell",
+		RequiredFiles:      []string{layout + "/web/index.html"},
+	}
+
+	prev := ListImplementBeadsByStatusHook
+	defer func() { ListImplementBeadsByStatusHook = prev }()
+	ListImplementBeadsByStatusHook = func(townRoot, rig string, v WorkflowValidation, status string) ([]PlanBead, error) {
+		return nil, nil
+	}
+
+	// scripts/stop.sh is from a past phase (foundation) and does NOT exist on disk.
+	// When the queue is green, writing this missing past-phase file must be allowed so the agent can self-heal.
+	if err := ValidateImplementWritePath(dir, rig, "", layout+"/scripts/stop.sh", v, false, "", nil); err != nil {
+		t.Fatalf("expected write allowed to recreate missing past-phase required file, got: %v", err)
+	}
+}

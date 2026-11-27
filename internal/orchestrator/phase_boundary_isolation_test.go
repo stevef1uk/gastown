@@ -131,3 +131,45 @@ func TestEnsurePhaseBoundaryIsolation_stashesCompanionTestOfFuturePhase(t *testi
 		t.Fatalf("expected app/api_test.go restored on disk: %v", err)
 	}
 }
+
+func TestEnsurePhaseBoundaryIsolation_rescuesPastFilesTrappedInFutureStash(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rig := "testrig"
+	rigDir := filepath.Join(dir, rig, "mayor", "rig")
+
+	// Phase 1 (foundation): scripts/stop.sh
+	// Phase 2 (polish): app/page.tsx
+	// Phase 3 (release): test/e2e.spec.ts (accidentally had scripts/stop.sh in its stash folder)
+	v := WorkflowValidation{
+		LayoutRoot: "app",
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "foundation", RequiredFiles: []string{"scripts/stop.sh"}},
+			{ID: "polish", RequiredFiles: []string{"app/page.tsx"}},
+			{ID: "release", RequiredFiles: []string{"test/e2e.spec.ts"}},
+		},
+		ActivePhaseIDField: "polish",
+	}
+
+	// Suppose scripts/stop.sh was previously moved into release's stash folder
+	releaseStashDir := filepath.Join(rigDir, ".gastown", "phase-stash", "release", "scripts")
+	if err := os.MkdirAll(releaseStashDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	stashedStopScript := filepath.Join(releaseStashDir, "stop.sh")
+	if err := os.WriteFile(stashedStopScript, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Active phase is polish (Phase 2). scripts/stop.sh is needed by foundation (Phase 1 <= Active).
+	_, restored, err := EnsurePhaseBoundaryIsolation(dir, rig, v)
+	if err != nil {
+		t.Fatalf("EnsurePhaseBoundaryIsolation: %v", err)
+	}
+
+	// scripts/stop.sh should have been rescued from release stash and restored to rigDir/scripts/stop.sh
+	restoredPath := filepath.Join(rigDir, "scripts", "stop.sh")
+	if _, err := os.Stat(restoredPath); err != nil {
+		t.Fatalf("expected scripts/stop.sh to be restored on disk: %v (restored list: %v)", err, restored)
+	}
+}
