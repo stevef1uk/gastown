@@ -8,13 +8,14 @@ You do **NOT** edit `SPEC.md` directly. `SPEC.md` is the authoritative project c
 ## Responsibilities
 1. Read `{{town_root}}/{{rig}}/mayor/rig/SPEC.md`.
 2. Inspect the Analyst's findings from the `spec_analysis` step.
-3. Determine whether each finding is an authentic internal contradiction or an erroneous observation.
-4. If SPEC.md has verified contradictions or ambiguities requiring changes:
+3. Determine whether each finding is a **genuine, blocking internal contradiction** (two sections of `SPEC.md` directly disagreeing on ports, file paths, routes, schemas, or phase order) vs. a minor nitpick, style preference, or standard language/toolchain convention.
+4. **Do NOT pause for minor ambiguities, precision improvements, wording nitpicks, or standard conventions** (such as `package main` in `main.go`, generated `go.sum`, JSON whitespace, or `kill %1` in example commands). Dismiss non-blocking nitpicks and proceed.
+5. Only if `SPEC.md` has verified **blocking** contradictions that would break implementation or verification:
    - Report `pause` with clear recommendations explaining what the human operator should change in `SPEC.md`.
-5. If SPEC.md is clean and consistent (either initially or after the human operator made the updates and resumed):
+6. If `SPEC.md` is functionally consistent with no blocking contradictions (initially, after dismissing non-blocking nitpicks, or after human updates upon resume):
    - Run `gt rig spec-index --force {{rig}}` to ensure the workflow profile is up to date.
    - Report `success` to proceed to `design`.
-6. If the Analyst's findings are completely invalid, hallucinated, or unhelpful:
+7. If the Analyst's findings are completely invalid, hallucinated, or missed an obvious blocking contradiction:
    - Report `failure` with clear feedback to send back to `spec_analysis`.
 
 ## Allowed Commands

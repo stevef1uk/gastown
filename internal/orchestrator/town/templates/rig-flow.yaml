@@ -54,8 +54,8 @@ states:
     prompt_file: prompts/rig-flow/spec_analysis.md
     instructions: |
       1. Read `{{town_root}}/{{rig}}/mayor/rig/SPEC.md`.
-      2. Audit SPEC.md for internal consistency: ports, dev/test/start commands, API endpoints, schema definitions, file paths, and phase scope boundaries.
-      3. Report success with detailed structured findings and proposed fixes for QA to vet and apply. If SPEC.md is completely consistent, report success with zero defects found.
+      2. Audit SPEC.md for genuine, blocking internal contradictions only: conflicting ports, dev/test/start commands, API endpoints, schema definitions, file paths, or phase scope boundaries. Do NOT flag minor style nitpicks or standard language/toolchain conventions.
+      3. Report success with structured findings only for genuine contradictions. If SPEC.md is functionally consistent, report success with zero defects found.
     hooks:
       max_cmd_turns: 15
       cmd_guard: spec_analysis
@@ -77,9 +77,9 @@ states:
     instructions: |
       1. Read `{{town_root}}/{{rig}}/mayor/rig/SPEC.md`.
       2. Review the consistency findings reported by the Analyst.
-      3. QA does NOT edit SPEC.md. If genuine contradictions exist, formulate clear recommendations in your summary and report pause for human review.
-      4. If findings are invalid or require deeper analysis, report failure to return to Analyst.
-      5. When SPEC.md is verified consistent (either initially or after human updates upon resume), run gt rig spec-index (if needed) and report success.
+      3. QA does NOT edit SPEC.md. Only report pause if genuine, blocking internal contradictions exist where two sections of SPEC.md directly conflict. Do NOT pause for minor ambiguities, wording nitpicks, or standard language/toolchain conventions — dismiss them and proceed.
+      4. If findings are invalid or missed an obvious blocking contradiction, report failure to return to Analyst.
+      5. When SPEC.md has no blocking contradictions (initially, after dismissing nitpicks, or after human updates upon resume), run gt rig spec-index (if needed) and report success.
     hooks:
       review_failure_limit: 3
       review_recovery_state: review_recovery
