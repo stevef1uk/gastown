@@ -363,10 +363,39 @@ reset_orchestrator_instances() {
     return 0
   fi
   local inst="$GT_ROOT/orchestrator/instances.json"
-  if [[ -f "$inst" ]]; then
-    rm -f "$inst"
-    echo "[orchestrator] removed $inst (stale workflow state)"
-  fi
+  local budgets="$GT_ROOT/orchestrator/execution-budgets.json"
+  mkdir -p "$(dirname "$inst")"
+  python3 - "$inst" "$budgets" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+inst_path = Path(sys.argv[1])
+budgets_path = Path(sys.argv[2])
+next_seq = 0
+if inst_path.exists():
+    try:
+        data = json.loads(inst_path.read_text())
+        next_seq = max(next_seq, int(data.get("next_seq") or 0))
+        for item in data.get("instances") or []:
+            if isinstance(item, dict):
+                m = re.match(r"^wf-(\d+)$", str(item.get("id") or ""))
+                if m:
+                    next_seq = max(next_seq, int(m.group(1)))
+    except Exception:
+        pass
+if budgets_path.exists():
+    try:
+        bdata = json.loads(budgets_path.read_text())
+        for key in bdata.keys():
+            for m in re.finditer(r"wf-(\d+)", str(key)):
+                next_seq = max(next_seq, int(m.group(1)))
+    except Exception:
+        pass
+inst_path.write_text(json.dumps({"instances": [], "next_seq": next_seq}, indent=2) + "\n")
+print(f"[orchestrator] cleared workflow instances in {inst_path} (preserved next_seq={next_seq})")
+PY
 }
 
 echo "=== gt down ==="

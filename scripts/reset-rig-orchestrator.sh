@@ -202,43 +202,51 @@ reset_orchestrator_instances() {
     return 0
   fi
   local inst="$GT_ROOT/orchestrator/instances.json"
+  local budgets="$GT_ROOT/orchestrator/execution-budgets.json"
   if [[ ! -f "$inst" ]]; then
     echo "[orchestrator] no instances.json"
     return 0
   fi
-  python3 - "$inst" "$RIG" <<'PY'
+  python3 - "$inst" "$RIG" "$budgets" <<'PY'
 import json
+import re
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
 rig = sys.argv[2]
+budgets_path = Path(sys.argv[3])
 data = json.loads(path.read_text())
 instances = data.get("instances") or []
+next_seq = int(data.get("next_seq") or 0)
 kept = []
 removed = 0
 for inst in instances:
     if not isinstance(inst, dict):
         kept.append(inst)
         continue
+    m = re.match(r"^wf-(\d+)$", str(inst.get("id") or ""))
+    if m:
+        next_seq = max(next_seq, int(m.group(1)))
     vars_ = inst.get("variables") or {}
     if vars_.get("rig") == rig:
         removed += 1
         continue
     kept.append(inst)
-if removed == 0 and not kept:
-    path.unlink(missing_ok=True)
-    print(f"[orchestrator] removed {path} (empty)")
-elif removed == 0:
-    print(f"[orchestrator] no instances for rig {rig!r} in {path}")
+if budgets_path.exists():
+    try:
+        for key in json.loads(budgets_path.read_text()).keys():
+            for m in re.finditer(r"wf-(\d+)", str(key)):
+                next_seq = max(next_seq, int(m.group(1)))
+    except Exception:
+        pass
+data["instances"] = kept
+data["next_seq"] = next_seq
+path.write_text(json.dumps(data, indent=2) + "\n")
+if removed == 0:
+    print(f"[orchestrator] no instances for rig {rig!r} in {path} (next_seq={next_seq})")
 else:
-    data["instances"] = kept
-    if not kept:
-        path.unlink(missing_ok=True)
-        print(f"[orchestrator] removed {path} (no instances left after rig-scoped purge)")
-    else:
-        path.write_text(json.dumps(data, indent=2) + "\n")
-        print(f"[orchestrator] removed {removed} instance(s) for rig {rig!r}; kept {len(kept)} other(s)")
+    print(f"[orchestrator] removed {removed} instance(s) for rig {rig!r}; kept {len(kept)} other(s) (preserved next_seq={next_seq})")
 PY
 }
 
