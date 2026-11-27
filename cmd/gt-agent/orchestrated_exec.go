@@ -761,7 +761,7 @@ func rewritePythonEditableInstallToLayout(cmd, rig, layout string, v orchestrato
 	if !orchestrator.WorkflowUsesPython(v) || layout == "" || layout == "." ||
 		strings.Contains(cmd, "<<") || !commandHasLayoutCD(cmd, layout) ||
 		!strings.Contains(lower, "pip install") ||
-		!regexp.MustCompile(`(?i)(?:^|[;&|]\s*)(?:python3?\s+-m\s+)?pip\s+install\b[^;&|]*\s(?:-e|--editable|-r|--requirement)(?:=|\s)`).MatchString(cmd) {
+		!regexp.MustCompile(`(?i)(?:^|[;&|]\s*)(?:\S*python3?\s+-m\s+)?pip\s+install\b[^;&|]*\s(?:-e|--editable|-r|--requirement)(?:=|\s)`).MatchString(cmd) {
 		return cmd, false
 	}
 

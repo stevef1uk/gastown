@@ -885,6 +885,11 @@ func TestRewriteUnittestToWorkdir_pythonRequirementsInstallUsesParentVenv(t *tes
 	if !changed || got != want {
 		t.Fatalf("got changed=%v command=%q; want command=%q", changed, got, want)
 	}
+	// Idempotent when a second rewrite pass runs on the already-rewritten command.
+	got2, _ := rewriteUnittestToWorkdir(got, rig, v)
+	if got2 != want {
+		t.Fatalf("second pass broke parent venv path: got %q; want %q", got2, want)
+	}
 }
 
 func TestRewriteUnittestToWorkdir_pythonPytestDirectorySelector(t *testing.T) {
