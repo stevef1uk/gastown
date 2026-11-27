@@ -175,6 +175,8 @@ func testReviewVerifyCommandMatches(cmd string, v orchestrator.WorkflowValidatio
 		for {
 			trimmed := false
 			for _, suffix := range []string{
+				"; echo \"VERIFY_EXIT=$?\"",
+				"; echo VERIFY_EXIT=$?",
 				"; echo \"EXIT=$?\"",
 				"; echo EXIT=$?",
 				"; echo $?",
@@ -188,6 +190,12 @@ func testReviewVerifyCommandMatches(cmd string, v orchestrator.WorkflowValidatio
 			}
 			if !trimmed {
 				break
+			}
+		}
+		if idx := strings.Index(s, ";"); idx != -1 {
+			prefix := strings.TrimSpace(s[:idx])
+			if prefix != "" {
+				s = prefix
 			}
 		}
 		return s

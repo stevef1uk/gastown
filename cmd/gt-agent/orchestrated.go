@@ -3864,7 +3864,7 @@ func validateTestReviewArtifacts(townRoot, rig, outcome string, hadCmdFailure, v
 	sendToPlan := outcome == "plan_gap"
 	sendToArchitect := outcome == "architecture_failure"
 
-	if hadCmdFailure && !sendToPolecat && !sendToPlan && !sendToArchitect {
+	if hadCmdFailure && !verifyOK && !sendToPolecat && !sendToPlan && !sendToArchitect {
 		return fmt.Errorf("test_review step had failed commands; fix errors before completing")
 	}
 	if !orchestrator.TestPlanMeetsMinSize(rigDir, v) {

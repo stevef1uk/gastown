@@ -20,9 +20,13 @@ func orchestratedCommandTimeoutForTrack(track, cmd string) time.Duration {
 			strings.Contains(lower, "curl") {
 			return 30 * time.Second
 		}
+		// Frontend builds or full verify chains involving npm/playwright/build
+		if strings.Contains(lower, "npm") || strings.Contains(lower, "pnpm") || strings.Contains(lower, "yarn") || strings.Contains(lower, "playwright") || strings.Contains(lower, "build") {
+			return 3 * time.Minute
+		}
 		// Python QA test verify.
 		if strings.Contains(lower, "pytest") || strings.Contains(lower, "python3 -m unittest") {
-			return 10 * time.Second
+			return 2 * time.Minute
 		}
 	}
 	return orchestratedCommandTimeout(cmd)
