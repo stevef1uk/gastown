@@ -230,8 +230,9 @@ Example:
 }
 
 var mayorWorkflowResetCmd = &cobra.Command{
-	Use:   "reset <workflow-id>",
-	Short: "Rewind a workflow to an earlier state",
+	Use:     "reset <workflow-id>",
+	Aliases: []string{"rewind"},
+	Short:   "Rewind a workflow to an earlier state",
 	Long: `Rewind a workflow instance so agents redo a step (e.g. design after deleting architecture.md).
 
 Updates orchestrator/instances.json and the running orchestrator when it is up.
