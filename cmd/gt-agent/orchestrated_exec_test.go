@@ -872,6 +872,21 @@ func TestRewriteUnittestToWorkdir_pythonEditableInstallKeepsProjectRoot(t *testi
 	}
 }
 
+func TestRewriteUnittestToWorkdir_pythonRequirementsInstallUsesParentVenv(t *testing.T) {
+	rig := "ping_rig"
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "pingapp",
+		TestRunner:      "pytest",
+		RequiredFiles:   []string{"pingapp/requirements.txt", "pingapp/main.py", "pingapp/test_main.py"},
+		QAVerifyCommand: "cd pingapp && pip install -r requirements.txt",
+	}
+	got, changed := rewriteUnittestToWorkdir(v.QAVerifyCommand, rig, v)
+	want := "cd " + rig + "/mayor/rig && cd pingapp && ../.venv/bin/python3 -m pip install -r requirements.txt"
+	if !changed || got != want {
+		t.Fatalf("got changed=%v command=%q; want command=%q", changed, got, want)
+	}
+}
+
 func TestRewriteUnittestToWorkdir_pythonPytestDirectorySelector(t *testing.T) {
 	town := t.TempDir()
 	rig := "testgt4minus"
