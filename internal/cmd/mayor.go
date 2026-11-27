@@ -503,6 +503,14 @@ func runMayorWorkflowReset(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if workflowResetTo == "planning" || workflowResetTo == "design" || workflowResetTo == "kickoff" {
+		if statuses, _ := orchestrator.GetWorkflowStatuses(townRoot, workflowID); len(statuses) > 0 {
+			if rig := strings.TrimSpace(statuses[0].Variables["rig"]); rig != "" {
+				os.Remove(filepath.Join(townRoot, rig, "mayor", "rig", ".gastown", "workflow-profile.json"))
+				os.Remove(filepath.Join(townRoot, rig, "mayor", "rig", ".gastown", "code-cache", workflowID+".json"))
+			}
+		}
+	}
 	fmt.Printf("%s Workflow %s reset to state: %s (status=running)\n", style.SuccessPrefix, workflowID, next)
 	return nil
 }

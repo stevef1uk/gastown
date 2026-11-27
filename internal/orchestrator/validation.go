@@ -302,6 +302,9 @@ func SanitizePhaseVerifyCommandsForStack(v WorkflowValidation) WorkflowValidatio
 		// clamp it back to the Docker command after the judge runs.
 		if phaseShipsDockerPlaywright(p) {
 			p.QAVerifyCommand = composePlaywrightVerifyCommand(p, v.LayoutRoot)
+		} else if strings.Contains(p.QAVerifyCommand, "playwright test --list") {
+			p.QAVerifyCommand = strings.ReplaceAll(p.QAVerifyCommand, "playwright test --list", "playwright test --project=chromium")
+			log.Printf("[clamp] phase %q: replaced playwright --list with execution %q", p.ID, p.QAVerifyCommand)
 		}
 	}
 	return v
