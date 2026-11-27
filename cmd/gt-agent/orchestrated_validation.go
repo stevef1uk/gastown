@@ -158,10 +158,15 @@ func testReviewVerifyCommandMatches(cmd string, v orchestrator.WorkflowValidatio
 				break
 			}
 			fields := strings.Fields(parts[0])
-			if len(fields) != 2 || fields[0] != "cd" || strings.ContainsAny(fields[1], "&|;()<>`$\\\n") {
+			if len(fields) == 0 {
 				break
 			}
-			s = parts[1]
+			if (len(fields) == 2 && fields[0] == "cd" && !strings.ContainsAny(fields[1], "&|;()<>`$\\\n")) ||
+				fields[0] == "export" || fields[0] == "unset" {
+				s = parts[1]
+				continue
+			}
+			break
 		}
 		return strings.Join(strings.Fields(s), " ")
 	}
@@ -190,6 +195,11 @@ func testReviewVerifyCommandMatches(cmd string, v orchestrator.WorkflowValidatio
 	cleanedCmd := stripCD(stripSuffixes(cmd))
 	cleanedVerify := stripCD(verify)
 	if cleanedCmd == cleanedVerify {
+		return true
+	}
+	normCleanedCmd := strings.ToLower(strings.Join(strings.Fields(orchestrator.NormalizePytestCommand(cleanedCmd)), " "))
+	normCleanedVerify := strings.ToLower(strings.Join(strings.Fields(orchestrator.NormalizePytestCommand(cleanedVerify)), " "))
+	if normCleanedCmd == normCleanedVerify {
 		return true
 	}
 	cleanedWithoutRedirect := strings.ReplaceAll(cleanedCmd, "2>&1", "")

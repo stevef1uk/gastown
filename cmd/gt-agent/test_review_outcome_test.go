@@ -129,6 +129,20 @@ func TestTestReviewVerifyCommandMatches_acceptsStderrAndFlags(t *testing.T) {
 			t.Errorf("expected Python test command to match: %q", cmd)
 		}
 	}
+
+	vPyChain := orchestrator.WorkflowValidation{
+		LayoutRoot:      "finally",
+		TestRunner:      "pytest",
+		QAVerifyCommand: "(cd finally/backend && uv run pytest tests/test_api.py -q) && (cd finally/test && npm install --ignore-scripts && npx playwright test --list)",
+	}
+	for _, cmd := range []string{
+		"export BEADS_DIR=/tmp/.beads && cd test4/mayor/rig && (cd finally/backend && uv run python3 -m pytest tests/test_api.py -q) && (cd finally/test && npm install --ignore-scripts && npx playwright test --list)",
+		"(cd finally/backend && uv run python3 -m pytest tests/test_api.py -q) && (cd finally/test && npm install --ignore-scripts && npx playwright test --list)",
+	} {
+		if !testReviewVerifyCommandMatches(cmd, vPyChain) {
+			t.Errorf("expected chained pytest command with exports/rewrites to match: %q", cmd)
+		}
+	}
 }
 
 func TestTestReviewMaskedShellSuccessDoesNotPass(t *testing.T) {
