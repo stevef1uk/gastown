@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -60,24 +61,17 @@ func QACommandWritesTestPlanDoc(cmd string) (path string, ok bool) {
 	return "", false
 }
 
+var testerRedirectRE = regexp.MustCompile(`(?i)(?:^|[\w.-]+)?\s*>{1,2}\s*([^\s|;&<>]+)`)
+
 // IsTesterWritingTestPlan reports whether a tester shell command writes to TEST_PLAN.md.
 func IsTesterWritingTestPlan(cmd string) bool {
-	// Check for shell redirect patterns: > test_plan.md, >> test_plan.md
-	for _, m := range qaShellRedirectRE.FindAllStringSubmatch(cmd, -1) {
+	// Check for shell redirect patterns targeting test_plan.md (e.g. > test_plan.md, cat > test_plan.md)
+	for _, m := range testerRedirectRE.FindAllStringSubmatch(cmd, -1) {
 		if len(m) < 2 {
 			continue
 		}
 		target := filepath.ToSlash(strings.Trim(m[1], `"'`))
 		if strings.ToLower(filepath.Base(target)) == "test_plan.md" {
-			return true
-		}
-	}
-	// Also check for heredoc patterns: cat > test_plan.md <<'EOF'
-	// and simple redirects: echo ... > test_plan.md
-	lower := strings.ToLower(cmd)
-	if strings.Contains(lower, "test_plan.md") {
-		// Check if there's a write indicator (>, >>, or heredoc)
-		if strings.Contains(lower, ">") || strings.Contains(lower, ">>") {
 			return true
 		}
 	}
