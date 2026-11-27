@@ -703,3 +703,29 @@ func TestTestReviewTimeoutRetriesAndEscalates(t *testing.T) {
 		})
 	}
 }
+
+func TestSelectTestReviewRepair_unreportedBrokenCompletedPhaseTestDoesNotRewind(t *testing.T) {
+	town, rig, v, _, beads := testReviewRepairFixture(t, "demo/store/store.py", "demo/store/test_store.py")
+	rigDir := filepath.Join(town, rig, "mayor", "rig")
+	v.ActivePhaseIDField = "browser"
+	v.DeliveryPhases[2].RequiredFiles = append(v.DeliveryPhases[2].RequiredFiles, "demo/store/store.py")
+	v.RequiredFiles = v.UnionRequiredFiles()
+	// Earlier phase "storage" test file is intentionally NOT created on disk (broken/missing),
+	// but reviewer explicitly reports a failure in "browser" only.
+	plan := "# Test plan\n\n### storage\nPhase: storage\nLevel: unit\nTest file: demo/store/test_store.py\nBead ID: sample-store\n" +
+		"\n### browser\nPhase: browser\nLevel: unit\nTest file: demo/store/store_test.py\nBead ID: sample-browser\n"
+	beads = append(beads, PlanBead{ID: "sample-browser", Title: "Implement demo/store/store_test.py per architecture"})
+	recoveryFile(t, rigDir, "demo/store/store_test.py", "def test_store():\n    assert True\n")
+	summary := "Test repair: demo/store/store_test.py — lacks assertions; reopen bead sample-browser. Future phases deferred."
+	repair, err := selectTestReviewRepair(rigDir, v, plan, summary, beads)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repair.phase != "browser" {
+		t.Fatalf("expected active phase browser to be repaired, but got rewound phase %q: %+v", repair.phase, repair)
+	}
+	if len(repair.beads) != 1 || repair.beads[0].ID != "sample-browser" {
+		t.Fatalf("expected bead sample-browser, got %+v", repair.beads)
+	}
+}
+

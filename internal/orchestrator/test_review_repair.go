@@ -216,7 +216,10 @@ func selectTestReviewRepair(rigDir string, v WorkflowValidation, plan, summary s
 		}
 		reported := strings.Contains(summary, test) || strings.Contains(summary, path) || strings.Contains(summary, testPath)
 		beadExplicitlyCited := cited[owners[0].ID] && isBeadExplicitlyCitedForRepair(summary, owners[0].ID)
-		named := reported || broken[test] || beadExplicitlyCited
+		named := reported || beadExplicitlyCited
+		if phase == v.ActivePhaseID() || !v.HasPhasedDelivery() {
+			named = named || broken[test]
+		}
 		anyNamed = anyNamed || named
 		explicit, err := classifyTestReviewFinding(summary, test, testPath)
 		if err != nil {
