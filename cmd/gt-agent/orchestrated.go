@@ -4258,6 +4258,64 @@ func validateWebInteractiveUI(townRoot, rig string, v orchestrator.WorkflowValid
 	text := combined.String()
 	hasControls := webControlRE.MatchString(text)
 	hasBehavior := webBehaviorRE.MatchString(text)
+	if !hasControls || !hasBehavior {
+		for _, rel := range sourceFiles {
+			if ext := strings.ToLower(filepath.Ext(rel)); ext == ".html" || ext == ".htm" {
+				dir := filepath.Dir(filepath.Join(rigDir, filepath.FromSlash(rel)))
+				_ = filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+					if err != nil || info.IsDir() || !strings.HasSuffix(strings.ToLower(p), ".js") {
+						return nil
+					}
+					data, err := os.ReadFile(p)
+					if err == nil {
+						if !hasControls && webControlRE.Match(data) {
+							hasControls = true
+						}
+						if !hasBehavior && webBehaviorRE.Match(data) {
+							hasBehavior = true
+						}
+						if hasControls && hasBehavior {
+							return filepath.SkipAll
+						}
+					}
+					return nil
+				})
+				if hasControls && hasBehavior {
+					break
+				}
+				parentDir := filepath.Dir(dir)
+				for _, sub := range []string{"app", "src", "pages", "components"} {
+					srcDir := filepath.Join(parentDir, sub)
+					if _, err := os.Stat(srcDir); err == nil {
+						_ = filepath.Walk(srcDir, func(p string, info os.FileInfo, err error) error {
+							if err != nil || info.IsDir() {
+								return nil
+							}
+							ext := strings.ToLower(filepath.Ext(p))
+							if ext == ".tsx" || ext == ".jsx" || ext == ".ts" || ext == ".js" {
+								data, err := os.ReadFile(p)
+								if err == nil {
+									if !hasControls && webControlRE.Match(data) {
+										hasControls = true
+									}
+									if !hasBehavior && webBehaviorRE.Match(data) {
+										hasBehavior = true
+									}
+									if hasControls && hasBehavior {
+										return filepath.SkipAll
+									}
+								}
+							}
+							return nil
+						})
+					}
+					if hasControls && hasBehavior {
+						break
+					}
+				}
+			}
+		}
+	}
 	if hasControls && hasBehavior {
 		return nil
 	}
