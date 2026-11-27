@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -269,11 +270,20 @@ func (c *Client) doRequestWithRetries(ctx context.Context, jsonData []byte) (str
 func (c *Client) CompleteMessages(ctx context.Context, messages []Message) (string, error) {
 	fmt.Printf("[llm] request start: model=%s messages=%d endpoint=%s\n", c.model, len(messages), c.endpoint)
 
+	maxTokens := 8192
+	if envMax := os.Getenv("LLM_MAX_TOKENS"); envMax != "" {
+		if v, err := strconv.Atoi(envMax); err == nil && v > 0 {
+			maxTokens = v
+		}
+	} else if c.role == "qa" {
+		maxTokens = 1024
+	}
+
 	reqBody := map[string]interface{}{
 		"model":      c.model,
 		"messages":   messages,
 		"stream":     false,
-		"max_tokens": 8192,
+		"max_tokens": maxTokens,
 	}
 
 	jsonData, err := json.Marshal(reqBody)

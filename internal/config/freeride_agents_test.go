@@ -67,15 +67,15 @@ func TestDefaultFreerideRoleAgents_PolecatUsesDeepSeek(t *testing.T) {
 	}
 }
 
-func TestDefaultFreerideAgents_QAUsesDeepSeek(t *testing.T) {
+func TestDefaultFreerideAgents_QAProfile(t *testing.T) {
 	t.Setenv("FREERIDE_MODELS_CONFIG", "/nonexistent")
 	agents := DefaultFreerideAgents(DefaultFreerideProxyEndpoint)
 	rc := agents["gt-agent-qa"]
 	if rc == nil {
 		t.Fatal("gt-agent-qa profile missing")
 	}
-	if rc.Env["LLM_MODEL"] != "~deepseek/deepseek-v4-flash-latest" {
-		t.Fatalf("LLM_MODEL = %q, want ~deepseek/deepseek-v4-flash-latest", rc.Env["LLM_MODEL"])
+	if rc.Env["LLM_MODEL"] != "google/gemini-3.6-flash" {
+		t.Fatalf("LLM_MODEL = %q, want google/gemini-3.6-flash", rc.Env["LLM_MODEL"])
 	}
 	if rc.Env["LLM_TIMEOUT"] != "1200s" {
 		t.Fatalf("LLM_TIMEOUT = %q, want 1200s", rc.Env["LLM_TIMEOUT"])
