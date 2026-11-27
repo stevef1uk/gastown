@@ -192,12 +192,6 @@ func testReviewVerifyCommandMatches(cmd string, v orchestrator.WorkflowValidatio
 				break
 			}
 		}
-		if idx := strings.Index(s, ";"); idx != -1 {
-			prefix := strings.TrimSpace(s[:idx])
-			if prefix != "" {
-				s = prefix
-			}
-		}
 		return s
 	}
 	cleanedCmd := stripCD(stripSuffixes(cmd))
