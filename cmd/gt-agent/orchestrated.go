@@ -3356,13 +3356,14 @@ func validateQACommand(cmd, rig, townRoot string, v orchestrator.WorkflowValidat
 	if strings.Contains(lower, "unittest") && !strings.Contains(lower, "cd ") && !strings.Contains(lower, rigMayorRigPath(rig)) {
 		return fmt.Errorf("unittest must run from %s (e.g. cd %s && python3 -m unittest %s -v)", rigMayorRigPath(rig), rigMayorRigPath(rig), v.UnittestModule)
 	}
+	allowQAPipInstall := strings.Contains(strings.ToLower(v.ActivePhaseQAVerifyCommand()), "pip install")
 	forbidden := []struct {
 		cond bool
 		msg  string
 	}{
 		{strings.Contains(lower, "/workspace"), "do not use /workspace paths — work from $GT_ROOT"},
 		{strings.Contains(lower, "flake8"), "do not run flake8 in QA step"},
-		{strings.Contains(lower, "pip install"), "do not install packages in QA step"},
+		{!allowQAPipInstall && strings.Contains(lower, "pip install"), "do not install packages in QA step"},
 		{strings.Contains(lower, "follow-arch"), "do not grep for invented FOLLOW-ARCH markers"},
 		{strings.Contains(lower, "arch-deviation"), "do not grep for invented ARCH-DEVIATION markers"},
 		{strings.Contains(lower, "spec-not-compliant"), "do not grep for invented SPEC markers"},
