@@ -62,34 +62,47 @@ cat > SPEC.md <<'SPECEOF'
 # Ping App - Trivial Go Web Server
 
 ## Goal
-A tiny Go HTTP server with one endpoint. Tests run via Playwright in a Docker compose wrapper — the Go server itself runs on the host and is NOT containerized.
+A tiny Go HTTP server with one JSON endpoint and a static web page. E2E tests run via Playwright in a Docker Compose wrapper — the Go server itself runs on the host on port 8080 and is NOT containerized.
+
+## Module
+```go
+module pingapp
+
+go 1.22
+```
 
 ## Architecture
-- Go 1.22, single main.go
-- Static HTML/JS served from /
-- **Go server runs on the HOST directly (go run pingapp/cmd/server). No Docker is needed for the Go application.**
-- Playwright E2E tests run in Docker compose, reaching the host through host.docker.internal
+- Go 1.22 standard library only, server entry point at `pingapp/cmd/server/main.go`, listening on `:8080`.
+- Static HTML/JS from `pingapp/web/` served at `/` (`index.html`) and `/app.js` (`app.js`).
+- **Go server runs on the HOST directly (`cd pingapp && go run ./cmd/server`). No Docker is needed for the Go application.**
+- Playwright E2E tests run in Docker Compose (`pingapp/docker-compose.yml`), reaching the host server on port 8080 via `BASE_URL` (default `http://host.docker.internal:8080`, or `http://127.0.0.1:8080` with host networking).
 
 ## HTTP API
-- GET /ping → 200 JSON {"message": "pong"}
+| Method | Path | Success |
+|--------|------|---------|
+| GET | `/ping` | 200, `Content-Type: application/json`, exact literal body `{"message": "pong"}` |
+| GET | `/` | 200, `text/html`, serves `web/index.html` |
+| GET | `/app.js` | 200, `application/javascript`, serves `web/app.js` |
 
 ## Web UI
-- Single page at / with "Hello" and a button
-- Button click changes text
+- Single page at `/` (`pingapp/web/index.html`) loading `/app.js` (`pingapp/web/app.js`).
+- Displays text `"Hello"` and a button labeled `"Click me"`.
+- Clicking `"Click me"` updates the displayed text to `"Clicked!"`.
 
 ## Delivery Phases
-1. **go-module** - Initialize go.mod
-2. **core** - main.go with /ping handler
-3. **web** - index.html + app.js
-4. **integration-test** - Playwright E2E via Docker compose (Playwright container reaches host via host.docker.internal; Go server stays on the host)
+1. **go-module** — Initialize `pingapp/go.mod` (verify: `cd pingapp && go mod tidy`)
+2. **core** — Implement `pingapp/cmd/server/main.go` and `pingapp/cmd/server/main_test.go` (`/ping` handler, static file serving for `web/`, and unit test checking status 200 and JSON `"message": "pong"`) (verify: `cd pingapp && go test ./...`)
+3. **web** — Implement `pingapp/web/index.html` and `pingapp/web/app.js` (verify: `cd pingapp && go test ./...`)
+4. **integration-test** — Implement `pingapp/package.json`, `pingapp/playwright.config.ts`, `pingapp/e2e/ping.spec.ts`, and `pingapp/docker-compose.yml` for Playwright E2E tests via Docker Compose (Playwright container reaches host on port 8080 via `BASE_URL`; Go server stays on the host) (verify: `cd pingapp && docker compose up --exit-code-from playwright`)
 
-## Layout
+## Layout (Create only these files)
 **layout_root: pingapp**
 
 ```
 pingapp/
 ├── go.mod
 ├── cmd/server/main.go
+├── cmd/server/main_test.go
 ├── web/index.html
 ├── web/app.js
 ├── playwright.config.ts
@@ -99,9 +112,9 @@ pingapp/
 ```
 
 ## Testing
-- Unit: `go test ./...`
-- E2E: `docker compose up --exit-code-from playwright` (docker-compose.yml runs ONLY the Playwright test harness container; the Go server is not containerized)
-- The Go server runs on the host on port 8080. Do NOT define a Dockerfile or base image for the Go application — Docker is only the Playwright test harness.
+- Unit: `cd pingapp && go test ./...`
+- E2E: `cd pingapp && docker compose up --exit-code-from playwright` (`docker-compose.yml` runs ONLY the Playwright test harness container using `playwright-go-test:latest`; the Go server is not containerized)
+- The Go server runs on the host on port 8080 (`http://127.0.0.1:8080`). Do NOT define a Dockerfile or base image for the Go application — Docker is only the Playwright test harness.
 SPECEOF
 
 git add SPEC.md

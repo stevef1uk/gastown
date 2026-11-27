@@ -25,13 +25,13 @@ git init -b main
 cat > REQUIREMENTS.md << 'EOF'
 # Hello World API
 
-Build a simple HTTP server with one endpoint:
+Build a simple HTTP server in Go 1.22 using the standard library only (no third-party frameworks) with one endpoint:
 
-- `GET /hello` returns `{"message": "Hello, World!"}`
+- `GET /hello` returns HTTP 200 with `Content-Type: application/json` and exact literal JSON body `{"message": "Hello, World!"}`.
 
-The server must listen on port 8080. Write it in Go using the standard library only (no frameworks).
+The server must listen on `127.0.0.1:8080` (port 8080).
 
-Provide a unit test for the handler.
+Provide a unit test for the handler that verifies HTTP 200, `Content-Type: application/json`, and that the decoded JSON `"message"` field equals `"Hello, World!"`.
 EOF
 
 git add REQUIREMENTS.md

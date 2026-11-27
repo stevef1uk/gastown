@@ -69,7 +69,7 @@ The backend service is written in Python with FastAPI.
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
-- Health endpoint: `GET /health` returns `{"status": "ok"}` on port 8080.
+- Health endpoint: `GET /health` returns HTTP 200 with `Content-Type: application/json` and JSON body `{"status": "ok"}` on port 8080.
 
 ## 3. Frontend Client
 The frontend client connects to the backend API.
@@ -84,6 +84,7 @@ Frontend delivery is out of scope for Phase 1; Section 3 documents the API integ
 ### Phase 1: Foundation
 - Scope: Initial backend health service and unit tests.
 - Required files:
+  - `requirements.txt`
   - `app/main.py`
   - `tests/test_api.py`
 - QA verify command:
