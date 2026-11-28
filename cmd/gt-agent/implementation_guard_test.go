@@ -491,3 +491,21 @@ func TestTestRepairGuardsBlockUnchangedBeadAndCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSummaryClaimsMissingFiles_doesNotRejectExistingRequiredFilesMention(t *testing.T) {
+	t.Parallel()
+	// Regression: QA confirming files exist while reporting real SPEC defects must NOT be rejected.
+	if summaryClaimsMissingFiles("All foundation required files exist and go test ./... passes, but UpdateDeal ignores the SPEC stage-probability rule.") {
+		t.Fatal("summary stating required files exist must not trigger missing-files rejection")
+	}
+	if summaryClaimsMissingFiles("Required files exist on disk, but ListActivities lacks contactID/dealID filters.") {
+		t.Fatal("summary stating required files exist on disk must not trigger missing-files rejection")
+	}
+	// Genuine false missing-file claims still trigger.
+	if !summaryClaimsMissingFiles("Required files are missing from accountable/internal/api/") {
+		t.Fatal("expected missing required files claim to trigger")
+	}
+	if !summaryClaimsMissingFiles("missing required file accountable/go.mod") {
+		t.Fatal("expected missing required file claim to trigger")
+	}
+}

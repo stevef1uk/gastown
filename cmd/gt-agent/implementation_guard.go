@@ -655,8 +655,13 @@ func summaryClaimsMissingFiles(summary string) bool {
 		strings.Contains(lower, "attribute") || strings.Contains(lower, "key") || strings.Contains(lower, "parameter") {
 		return false
 	}
+	if strings.Contains(lower, "required files exist") || strings.Contains(lower, "files exist on disk") {
+		return false
+	}
 	for _, needle := range []string{
-		"files missing", "file missing", "required files", "missing required file",
+		"files missing", "file missing",
+		"required files are missing", "required files missing", "required files not found",
+		"missing required file", "required file is missing", "required file missing",
 		"not found on disk", "files not found",
 		"cannot cd", "can't cd", "cd to", "working directory",
 	} {
