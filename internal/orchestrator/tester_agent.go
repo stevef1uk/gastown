@@ -83,6 +83,17 @@ func isNonTestOnlyFile(f string) bool {
 	return false
 }
 
+func isStaticWebAssetFile(f string) bool {
+	lower := strings.ToLower(filepath.Base(f))
+	if IsTestImplementPath(f) || strings.HasSuffix(lower, ".test.js") || strings.HasSuffix(lower, ".spec.js") || strings.HasSuffix(lower, ".cy.js") {
+		return false
+	}
+	return strings.HasSuffix(lower, ".html") || strings.HasSuffix(lower, ".css") || strings.HasSuffix(lower, ".js") ||
+		strings.HasSuffix(lower, ".svg") || strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".ico")
+}
+
+var jsOrBrowserTestRunnerRE = regexp.MustCompile(`(^|[\s;&|])((?:npm|yarn|pnpm|npx)\s+(?:test|playwright|jest|vitest|cypress)\b|(?:docker|podman)\s+compose\b|docker-compose\b|playwright\s+test\b|cypress\s+run\b|jest\b|vitest\b)`)
+
 // PhaseShipsAutomatedTests reports whether a delivery phase runs automated tests.
 // A setup-only phase (manifest/config files such as requirements.txt, go.mod,
 // package.json; deployment manifests/Dockerfiles; release docs; verify command that
@@ -96,15 +107,26 @@ func PhaseShipsAutomatedTests(p DeliveryPhase) bool {
 	// A phase whose required_files are all non-test deliverables (manifests, docs,
 	// Dockerfiles, k8s manifests) does not ship automated tests even if its
 	// regression verification command runs go test or pytest.
+	// Likewise, a static-web-only phase (.html/.css/plain .js with no test files)
+	// does not ship automated tests when its verify command only runs backend
+	// regression tests (e.g. go test / pytest) or syntax checks (node --check)
+	// rather than a JS/browser test runner.
 	if len(p.RequiredFiles) > 0 {
 		nonTestOnly := true
+		staticWebOrNonTestOnly := true
 		for _, f := range p.RequiredFiles {
 			if !isNonTestOnlyFile(f) {
 				nonTestOnly = false
-				break
+				if !isStaticWebAssetFile(f) {
+					staticWebOrNonTestOnly = false
+					break
+				}
 			}
 		}
 		if nonTestOnly {
+			return false
+		}
+		if staticWebOrNonTestOnly && !jsOrBrowserTestRunnerRE.MatchString(strings.ToLower(p.QAVerifyCommand)) {
 			return false
 		}
 	}

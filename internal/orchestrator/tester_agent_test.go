@@ -574,6 +574,8 @@ func TestPhaseShipsAutomatedTests(t *testing.T) {
 		{"source-build", DeliveryPhase{RequiredFiles: []string{"pingapp/go.mod", "pingapp/main.go"}, QAVerifyCommand: "go build ./..."}, true},
 		{"declared-test", DeliveryPhase{RequiredFiles: []string{"pingapp/go.mod", "pingapp/main_test.go"}, QAVerifyCommand: "go test ./..."}, true},
 		{"web-static-assets", DeliveryPhase{ID: "web", RequiredFiles: []string{"pingapp/web/index.html", "pingapp/web/app.js"}, QAVerifyCommand: "test -f pingapp/web/index.html && test -f pingapp/web/app.js"}, false},
+		{"web-static-assets-with-go-regression", DeliveryPhase{ID: "core-ui", RequiredFiles: []string{"accountable/web/index.html", "accountable/web/app.js", "accountable/web/style.css"}, QAVerifyCommand: "cd accountable && go test ./... && node --check web/app.js"}, false},
+		{"web-js-with-npm-test", DeliveryPhase{ID: "core-ui", RequiredFiles: []string{"app/web/index.html", "app/web/app.js"}, QAVerifyCommand: "cd app && npm test"}, true},
 		{"playwright-docker-phase", DeliveryPhase{ID: "integration-test", RequiredFiles: []string{"pingapp/playwright.config.ts", "pingapp/e2e/ping.spec.ts"}, QAVerifyCommand: "cd pingapp && docker compose up --exit-code-from playwright"}, true},
 		{"docker-deploy-phase", DeliveryPhase{ID: "deploy", RequiredFiles: []string{"taskboard/Dockerfile", "taskboard/deploy/k8s/deployment.yaml"}, QAVerifyCommand: "cd taskboard && go test ./... && docker build ."}, false},
 		{"release-docs-phase", DeliveryPhase{ID: "release", RequiredFiles: []string{"taskboard/README.md"}, QAVerifyCommand: "cd taskboard && go test ./..."}, false},
