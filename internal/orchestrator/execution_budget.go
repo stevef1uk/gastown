@@ -93,13 +93,15 @@ func ReserveWorkflowLLMRequest(townRoot, rig, workflowID string, tokens int64) e
 	return err
 }
 
+const defaultWorkflowMaxLLMTokens int64 = 60000000
+
 // ReserveWorkflowLLMRequestWithAvailable admits one HTTP attempt and reports the
 // token headroom observed under the same lock as the reservation.
 func ReserveWorkflowLLMRequestWithAvailable(townRoot, rig, workflowID string, tokens int64) (int64, error) {
 	if townRoot == "" || rig == "" || workflowID == "" || tokens <= 0 {
 		return 0, fmt.Errorf("execution budget: missing request identity or token reservation")
 	}
-	tokenLimit, err := executionLimit("GT_WORKFLOW_MAX_LLM_TOKENS", 20000000)
+	tokenLimit, err := executionLimit("GT_WORKFLOW_MAX_LLM_TOKENS", defaultWorkflowMaxLLMTokens)
 	if err != nil {
 		return 0, err
 	}
@@ -273,7 +275,7 @@ func ReadWorkflowExecutionBudget(townRoot, rig, workflowID string) (ExecutionBud
 		used.DollarLimitMicros = used.DollarLimitOverrideMicros
 	}
 	if used.TokenLimit == 0 {
-		used.TokenLimit, err = executionLimit("GT_WORKFLOW_MAX_LLM_TOKENS", 20000000)
+		used.TokenLimit, err = executionLimit("GT_WORKFLOW_MAX_LLM_TOKENS", defaultWorkflowMaxLLMTokens)
 		if err != nil {
 			return used, false, err
 		}
