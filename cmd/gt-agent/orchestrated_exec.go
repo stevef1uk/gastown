@@ -715,7 +715,8 @@ func rewriteUnittestToWorkdirAtTownRoot(cmd, rig, townRoot string, v orchestrato
 		}
 	}
 	if orchestrator.WorkflowUsesGo(v) && isCommandCWDInLayout(cmd, workPath, layout) {
-		normalized := orchestrator.NormalizeGoLayoutPackagePaths(cmd, workPath, layout)
+		prefix, suffix := splitBeforeParentCD(cmd)
+		normalized := orchestrator.NormalizeGoLayoutPackagePaths(prefix, workPath, layout) + suffix
 		if normalized != cmd {
 			cmd = normalized
 			changed = true
@@ -723,9 +724,11 @@ func rewriteUnittestToWorkdirAtTownRoot(cmd, rig, townRoot string, v orchestrato
 	}
 	if layout != "" && layout != "." {
 		cmd = normalizeRigPrefixShellPaths(cmd, rig, layout)
-		// Only strip layout/ prefix when the command actually begins execution in the layout root.
+		// Only strip layout/ prefix when the command actually begins execution in the layout root,
+		// and never strip layout/ prefixes after a `cd ..` that exits the layout directory.
 		if isCommandCWDInLayout(cmd, workPath, layout) {
-			normalized := normalizeLayoutShellPaths(cmd, layout)
+			prefix, suffix := splitBeforeParentCD(cmd)
+			normalized := normalizeLayoutShellPaths(prefix, layout) + suffix
 			if normalized != cmd {
 				cmd = normalized
 				changed = true
@@ -836,6 +839,15 @@ func normalizeLayoutShellPaths(cmd, layout string) string {
 	// Only strip when layout/ is a redundant prefix, not when it's part of a nested path like layout/layout/.
 	cmd = stripLayoutPrefixFromSpaceSeparatedPaths(cmd, layout)
 	return cmd
+}
+
+// splitBeforeParentCD splits a shell command at the first `cd ..` so layout-relative
+// path stripping does not mutate paths that intentionally run from the parent directory.
+func splitBeforeParentCD(cmd string) (string, string) {
+	if idx := strings.Index(cmd, "cd .."); idx >= 0 {
+		return cmd[:idx], cmd[idx:]
+	}
+	return cmd, ""
 }
 
 // stripLayoutPrefixFromSpaceSeparatedPaths strips layout/ prefix from space-separated file paths.

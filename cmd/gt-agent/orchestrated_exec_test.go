@@ -892,6 +892,20 @@ func TestRewriteUnittestToWorkdir_pythonRequirementsInstallUsesParentVenv(t *tes
 	}
 }
 
+func TestRewriteUnittestToWorkdir_preservesLayoutPrefixAfterParentCD(t *testing.T) {
+	rig := "crm"
+	v := orchestrator.WorkflowValidation{
+		LayoutRoot:      "accountable",
+		TestRunner:      "go",
+		RequiredFiles:   []string{"accountable/go.mod", "accountable/web/app.js", "accountable/web/index.html"},
+		QAVerifyCommand: "cd accountable && go test ./... && cd .. && node --check accountable/web/app.js && grep -qi dashboard accountable/web/index.html",
+	}
+	got, _ := rewriteUnittestToWorkdir(v.QAVerifyCommand, rig, v)
+	if !strings.Contains(got, "cd .. && node --check accountable/web/app.js && grep -qi dashboard accountable/web/index.html") {
+		t.Fatalf("must preserve layout prefix after cd .., got %q", got)
+	}
+}
+
 func TestRewriteUnittestToWorkdir_pythonPytestDirectorySelector(t *testing.T) {
 	town := t.TempDir()
 	rig := "testgt4minus"

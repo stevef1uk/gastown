@@ -282,6 +282,9 @@ func selectTestReviewRepair(rigDir string, v WorkflowValidation, plan, summary s
 		}
 	}
 	if len(selected.beads) == 0 {
+		if fallback, ok := selectNonTestPhaseRepairBeads(v, beads, summary); ok {
+			return fallback, nil
+		}
 		return gap("Tester rejection identifies no repairable active/completed-phase tests; correct TEST_PLAN.md phase and bead mappings")
 	}
 	for _, candidate := range candidates {
@@ -311,6 +314,72 @@ func selectTestReviewRepair(rigDir string, v WorkflowValidation, plan, summary s
 		selected.deferred[deferredPhase][candidate.bead.ID] = appendUniquePath(selected.deferred[deferredPhase][candidate.bead.ID], candidate.test)
 	}
 	return selected, nil
+}
+
+// selectNonTestPhaseRepairBeads handles test_review failures in non-test-carrying
+// delivery phases (e.g. static web UI or setup phases that intentionally have no
+// TEST_PLAN.md rows). Instead of falsely routing to plan_gap/test_plan_rework, it
+// reopens the active-phase implementation bead(s) cited in summary (or all active-phase
+// implementation beads if none is named).
+func selectNonTestPhaseRepairBeads(v WorkflowValidation, beads []PlanBead, summary string) (testReviewRepair, bool) {
+	if !v.HasPhasedDelivery() {
+		return testReviewRepair{}, false
+	}
+	activeID := v.ActivePhaseID()
+	var activePhase *DeliveryPhase
+	for i := range v.DeliveryPhases {
+		if v.DeliveryPhases[i].ID == activeID {
+			activePhase = &v.DeliveryPhases[i]
+			break
+		}
+	}
+	if activePhase == nil || v.PhaseShipsAutomatedTests(*activePhase) {
+		return testReviewRepair{}, false
+	}
+	required := map[string]bool{}
+	for _, f := range activePhase.RequiredFiles {
+		if norm := filepath.ToSlash(strings.TrimSpace(f)); norm != "" {
+			required[norm] = true
+		}
+	}
+	lowerSummary := strings.ToLower(summary)
+	var allActive, mentioned []PlanBead
+	for _, b := range beads {
+		if isSupersededImplementBead(b) {
+			continue
+		}
+		rawPath, _, _ := strings.Cut(ExtractPathFromBeadTitle(b.Title, v.BeadTitleContains), " per ")
+		rel := filepath.ToSlash(strings.TrimSpace(rawPath))
+		if rel == "" || !required[rel] {
+			continue
+		}
+		allActive = append(allActive, b)
+		if summaryMentionsBeadID(lowerSummary, b.ID) ||
+			strings.Contains(lowerSummary, strings.ToLower(rel)) ||
+			strings.Contains(lowerSummary, strings.ToLower(filepath.Base(rel))) {
+			mentioned = append(mentioned, b)
+		}
+	}
+	chosen := mentioned
+	if len(chosen) == 0 {
+		chosen = allActive
+	}
+	if len(chosen) == 0 {
+		return testReviewRepair{}, false
+	}
+	return testReviewRepair{
+		phase: activeID,
+		beads: chosen,
+		tests: map[string][]string{},
+	}, true
+}
+
+func summaryMentionsBeadID(lowerSummary, id string) bool {
+	id = strings.ToLower(strings.TrimSpace(id))
+	if id == "" {
+		return false
+	}
+	return strings.Contains(lowerSummary, id)
 }
 
 func reopenTestReviewRepair(townRoot, rig string, v WorkflowValidation, plan, summary string) ([]string, error) {

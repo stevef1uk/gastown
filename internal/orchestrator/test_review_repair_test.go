@@ -729,3 +729,40 @@ func TestSelectTestReviewRepair_unreportedBrokenCompletedPhaseTestDoesNotRewind(
 	}
 }
 
+func TestSelectTestReviewRepair_nonTestPhaseReopensActiveBeadInsteadOfPlanGap(t *testing.T) {
+	t.Parallel()
+	rigDir := t.TempDir()
+	v := WorkflowValidation{
+		LayoutRoot:         "accountable",
+		BeadTitleContains:  "Implement accountable/",
+		ActivePhaseIDField: "core-ui",
+		CompletedPhaseIDsField: []string{"foundation"},
+		DeliveryPhases: []DeliveryPhase{
+			{ID: "foundation", RequiredFiles: []string{"accountable/go.mod", "accountable/internal/api/handlers.go"}, QAVerifyCommand: "cd accountable && go test ./..."},
+			{ID: "core-ui", RequiredFiles: []string{"accountable/web/index.html", "accountable/web/app.js", "accountable/web/style.css"}, QAVerifyCommand: "cd accountable && go test ./... && cd .. && node --check accountable/web/app.js"},
+		},
+	}
+	plan := `### foundation
+Level: integration
+Test file: accountable/internal/api/handlers_test.go
+Bead ID: crm-d4j
+Phase: foundation
+`
+	beads := []PlanBead{
+		{ID: "crm-d4j", Title: "Implement accountable/internal/api/handlers.go per architecture"},
+		{ID: "crm-wj0", Title: "Implement accountable/web/app.js per architecture"},
+		{ID: "crm-aw2", Title: "Implement accountable/web/index.html per architecture"},
+	}
+	summary := "Implementation repair: accountable/web/app.js:172 — node --check fails with SyntaxError. Reopen bead crm-wj0."
+	repair, err := selectTestReviewRepair(rigDir, v, plan, summary, beads)
+	if err != nil {
+		t.Fatalf("expected non-test-phase fallback repair, got error: %v", err)
+	}
+	if repair.phase != "core-ui" {
+		t.Fatalf("repair.phase = %q, want core-ui", repair.phase)
+	}
+	if len(repair.beads) != 1 || repair.beads[0].ID != "crm-wj0" {
+		t.Fatalf("expected crm-wj0 reopened, got %+v", repair.beads)
+	}
+}
+
