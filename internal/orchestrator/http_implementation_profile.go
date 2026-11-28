@@ -584,7 +584,7 @@ func (p HTTPImplementationProfile) HandlerTestMissingModuleChdirIssues(relPath, 
 		return nil
 	}
 	if strings.Contains(content, "t.Chdir") || strings.Contains(content, "os.Chdir") {
-		if handlerTestUsesModuleRootChdir(content) {
+		if HandlerTestUsesModuleRootChdir(content) {
 			return nil
 		}
 		return []string{
@@ -600,7 +600,10 @@ func (p HTTPImplementationProfile) HandlerTestMissingModuleChdirIssues(relPath, 
 	}
 }
 
-func handlerTestUsesModuleRootChdir(content string) bool {
+// HandlerTestUsesModuleRootChdir reports whether test content changes directory
+// upward to the module root (e.g. os.Chdir(filepath.Join("..", ".."))) rather than
+// into t.TempDir() or another fake layout. Shared by native-edit and HTTP profile guards.
+func HandlerTestUsesModuleRootChdir(content string) bool {
 	if strings.Contains(content, "t.TempDir()") && strings.Contains(content, "Chdir") {
 		return false
 	}

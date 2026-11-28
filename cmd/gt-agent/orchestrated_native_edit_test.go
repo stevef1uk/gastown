@@ -634,6 +634,26 @@ func TestStatic(t *testing.T) {
 	if !strings.Contains(combined.String(), "os.Chdir") {
 		t.Fatalf("feedback:\n%s", combined.String())
 	}
+
+	// Module-root chdir (filepath.Join("..", "..")) MUST be allowed so native-edit
+	// does not contradict HandlerTestMissingModuleChdirIssues.
+	validBody := `package api
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestStatic(t *testing.T) {
+	if err := os.Chdir(filepath.Join("..", "..")); err != nil {
+		t.Fatal(err)
+	}
+}
+`
+	if _, err := validateAndNormalizeNativeGoContent("linkshelf/internal/api/handlers_test.go", validBody); err != nil {
+		t.Fatalf("module-root os.Chdir must be allowed in _test.go, got: %v", err)
+	}
 }
 
 func TestValidateAndNormalizeNativeGoContent_dedupesDuplicateTests(t *testing.T) {
