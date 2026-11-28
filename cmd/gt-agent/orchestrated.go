@@ -403,6 +403,7 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 		return "failure", err.Error(), "", err
 	}
 	var qaCmdsRan bool
+	consecutiveEmptyResponses := 0
 	for turn := 1; turn <= maxTurns; turn++ {
 		if rig != "" && orchestrator.IsRigWorkflowPaused(townRoot, rig) {
 			return "failure", "workflow paused", lastAttemptFeedback.String(), orchestrator.ErrWorkflowPaused
@@ -428,6 +429,34 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			return "fail", "", lastAttemptFeedback.String(), llmErr
 		}
 		orchestratedPrintf("[gt-agent] LLM response (turn %d) [model=%s]:\n%s\n", turn, client.LastModel, response)
+		if strings.TrimSpace(response) == "" {
+			consecutiveEmptyResponses++
+			if consecutiveEmptyResponses >= 3 {
+				orchestratedPrintf("[gt-agent] %d consecutive empty LLM responses — aborting turn loop to prevent runaway token burn\n", consecutiveEmptyResponses)
+				summary := fmt.Sprintf("LLM returned %d consecutive empty responses; aborting session", consecutiveEmptyResponses)
+				for _, allowed := range task.AllowedOutcomes {
+					if strings.EqualFold(allowed, "timeout") {
+						return "timeout", summary + " to recycle with fresh context", lastAttemptFeedback.String(), nil
+					}
+				}
+				return "fail", summary, lastAttemptFeedback.String(), fmt.Errorf("consecutive empty LLM responses")
+			}
+			// Do not append an empty assistant message (Anthropic/OpenRouter rejects or
+			// echoes empty turns). Only attach full context on the first empty reply;
+			// subsequent retries get a short 1-line reminder to avoid +15KB prompt bloat.
+			msg := "Empty reply — emit a concrete CMD:, READ:, EDIT:, WRITE:, or JSON outcome."
+			if consecutiveEmptyResponses == 1 {
+				msg = runner.emptyResponseNudge()
+			}
+			recordAttemptFeedback(msg + "\n")
+			if len(messages) > 0 && messages[len(messages)-1].Role == "user" {
+				messages[len(messages)-1].Content += "\n\n" + msg
+			} else {
+				messages = append(messages, llm.Message{Role: "user", Content: msg})
+			}
+			continue
+		}
+		consecutiveEmptyResponses = 0
 		messages = append(messages, llm.Message{Role: "assistant", Content: response})
 
 		runner.runPerTurn()
@@ -700,13 +729,6 @@ func executeOrchestratedTask(ctx context.Context, client *llm.Client, townRoot, 
 			}
 			runner.recordTerminalTaskLearnings(response, o)
 			return o, s, lastAttemptFeedback.String(), nil
-		}
-
-		if strings.TrimSpace(response) == "" {
-			msg := runner.emptyResponseNudge()
-			recordAttemptFeedback(msg + "\n")
-			messages = append(messages, llm.Message{Role: "user", Content: msg})
-			continue
 		}
 
 		// Non-terminal JSON outcome loop guard: the LLM may emit {"outcome":"continue","next_action":"..."}
